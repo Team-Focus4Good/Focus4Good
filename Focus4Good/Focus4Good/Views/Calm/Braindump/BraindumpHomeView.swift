@@ -50,7 +50,7 @@ struct BraindumpHomeView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
     }
 
     // MARK: - Entries List
@@ -68,7 +68,7 @@ struct BraindumpHomeView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
     }
 
     private func entryRow(_ entry: BrainDumpEntry) -> some View {

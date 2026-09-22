@@ -26,7 +26,7 @@ struct ASMRPlaylistDetailView: View {
                 .padding(.bottom, 40)
             }
         }
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             saveAsRecentPlaylist()

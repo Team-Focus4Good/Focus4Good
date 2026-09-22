@@ -15,19 +15,18 @@ struct CalmCentreView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
                     Button { showBraindump = true } label: { braindumpCard }
                         .buttonStyle(.plain)
 
-                    relaxationToolsSection
-                    dailyTipRow
+                    relaxationToolsGrid
                 }
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
             }
-            .background(AppTheme.appGradient.ignoresSafeArea())
+            .background(Color.white.ignoresSafeArea())
             .navigationTitle("Calm Centre")
             .navigationDestination(isPresented: $showBraindump) { BraindumpHomeView() }
             .navigationDestination(isPresented: $showBreathe) { BreatheSessionView() }
@@ -40,191 +39,121 @@ struct CalmCentreView: View {
     // MARK: - Subviews
 
     private var braindumpCard: some View {
-        Image("BRAINDUMPCARD")
-            .resizable()
-            .scaledToFit()
-            .frame(maxWidth: .infinity)
-            .overlay(alignment: .leading) {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color(hex: "FFF7F2"))
+
+            HStack(spacing: 4) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Braindump")
-                        .font(.system(.title2, design: .default, weight: .bold))
-                        .foregroundStyle(.primary)
-                    
-                    Text("Get the noise out\nof your head.")
-                        .font(.system(.caption2, design: .default, weight: .regular))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Color(hex: "1C1C1E"))
+
+                    Text("Get the noise out of your\nhead.")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(Color(hex: "8E8E93"))
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.85)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 18)
+
+                Spacer(minLength: 4)
+
+                Image("BRAINDUMPCARD")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 160)
+                    .padding(.trailing, 6)
+            }
+            .padding(.vertical, 6)
+        }
+        .frame(height: 175)
+    }
+
+    private var relaxationToolsGrid: some View {
+        LazyVGrid(columns: columns, spacing: 16) {
+            // 1. 4-7-8 Breathing Exercise
+            toolCard(
+                title: "4-7-8 Breathing\nExercise",
+                subtitle: "Calm your mind\nin a few breaths.",
+                imageName: "breathe",
+                bgColor: Color(hex: "F2FAF5"),
+                action: { showBreathe = true }
+            )
+
+            // 2. JPMR
+            toolCard(
+                title: "JPMR",
+                subtitle: "Relax your body,\none muscle at a time.",
+                imageName: "JPMR",
+                bgColor: Color(hex: "F0F6FE"),
+                action: { showJPMR = true }
+            )
+
+            // 3. ASMR Sounds
+            toolCard(
+                title: "ASMR Sounds",
+                subtitle: "Soothing audio for\na quieter mind.",
+                imageName: "ASMR",
+                bgColor: Color(hex: "FFF2F5"),
+                action: { showASMR = true }
+            )
+
+            // 4. Deep Focus
+            toolCard(
+                title: "Deep Focus",
+                subtitle: "Stay present,\none step at a time.",
+                imageName: "DEEPFOCUS",
+                bgColor: Color(hex: "F5F2FE"),
+                action: { showDeepFocus = true }
+            )
+        }
+    }
+
+    private func toolCard(
+        title: String,
+        subtitle: String,
+        imageName: String,
+        bgColor: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Spacer(minLength: 4)
+
+                Image(imageName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 125)
+
+                VStack(spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color(hex: "1C1C1E"))
+                        .multilineTextAlignment(.center)
                         .lineLimit(2)
-                    
-                    Spacer().frame(height: 2)
-                    
-                    HStack(spacing: 4) {
-                        Text("Start Dumping")
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 10))
-                    }
-                    .font(.system(.caption, design: .default, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.orange)
-                    .clipShape(Capsule())
+                        .minimumScaleFactor(0.9)
+
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(Color(hex: "8E8E93"))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
                 }
-                .padding(.leading, 20)
-                .padding(.trailing, 160) // Increase right padding to give image more breathing room
+                .padding(.horizontal, 8)
+
+                Spacer(minLength: 8)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
-    }
-
-    private var relaxationToolsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Relaxation Tools")
-                .font(.title3)
-                .fontWeight(.bold)
-                .foregroundStyle(.primary)
-
-            LazyVGrid(columns: columns, spacing: 16) {
-                Button { showBreathe = true } label: {
-                    VStack(spacing: 0) {
-                        Image("breathe")
-                            .resizable()
-                            .scaledToFill()
-                            .scaleEffect(1.15)
-                            .offset(x: -15, y: 12)
-                            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 90, maxHeight: 90)
-                            .clipped()
-                        
-                        VStack(alignment: .center) {
-                            Text("4-7-8 Breathing Technique")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.9)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(height: 50)
-                        .background(Color(.secondarySystemGroupedBackground))
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
-                }
-                .buttonStyle(.plain)
-
-                Button { showJPMR = true } label: {
-                    VStack(spacing: 0) {
-                        Image("JPMR")
-                            .resizable()
-                            .scaledToFill()
-                            .scaleEffect(1.15)
-                            .offset(y: 12)
-                            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 90, maxHeight: 90)
-                            .clipped()
-                        
-                        VStack(alignment: .center) {
-                            Text("Jacobson's Progressive Muscle Relaxation")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.8)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(height: 50)
-                        .background(Color(.secondarySystemGroupedBackground))
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
-                }
-                .buttonStyle(.plain)
-
-                Button { showASMR = true } label: {
-                    VStack(spacing: 0) {
-                        Image("ASMR")
-                            .resizable()
-                            .scaledToFill()
-                            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 105, maxHeight: 105)
-                            .clipped()
-                        
-                        VStack(alignment: .center) {
-                            Text("ASMR Sounds")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.9)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(height: 35)
-                        .background(Color(.secondarySystemGroupedBackground))
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
-                }
-                .buttonStyle(.plain)
-
-                Button { showDeepFocus = true } label: {
-                    VStack(spacing: 0) {
-                        Image("DEEPFOCUS")
-                            .resizable()
-                            .scaledToFill()
-                            .scaleEffect(1.3)
-                            .offset(x: 5, y: 0)
-                            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 105, maxHeight: 105)
-                            .clipped()
-                        
-                        VStack(alignment: .center) {
-                            Text("Deep Focus")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.9)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(height: 35)
-                        .background(Color(.secondarySystemGroupedBackground))
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
-                }
-                .buttonStyle(.plain)
-            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 220)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(bgColor)
+            )
         }
-    }
-
-    private var dailyTipRow: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "lightbulb.fill")
-                .font(.title2)
-                .foregroundStyle(Color.orange)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Daily Tip")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.primary)
-
-                Text("Focus on exhale helps maintain stress.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.orange.opacity(0.1))
-        )
+        .buttonStyle(.plain)
     }
 }
 

@@ -54,6 +54,7 @@ struct BraindumpEditorView: View {
                 .transition(.scale.combined(with: .opacity))
             }
         }
+        .background(Color.white.ignoresSafeArea())
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showWellDonePopup)
         .navigationBarBackButtonHidden(true)
         .toolbar {

@@ -78,6 +78,7 @@ struct BraindumpPasswordView: View {
             numberPad.padding(.bottom, 40)
         }
         .padding(.horizontal, 40)
+        .background(Color.white.ignoresSafeArea())
         .navigationTitle("Braindump")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

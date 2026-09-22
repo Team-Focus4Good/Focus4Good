@@ -40,7 +40,7 @@ struct BraindumpFoldersView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
         .environment(\.editMode, .constant(isEditing ? .active : .inactive))
         .tint(.accentColor)
         .navigationTitle("Folders")

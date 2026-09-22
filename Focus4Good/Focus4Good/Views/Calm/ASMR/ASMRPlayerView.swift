@@ -57,7 +57,7 @@ struct ASMRPlayerView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

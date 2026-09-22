@@ -63,7 +63,7 @@ struct BreatheSessionView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.appGradient.ignoresSafeArea()
+            Color.white.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer()

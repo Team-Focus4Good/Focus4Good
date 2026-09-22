@@ -83,7 +83,7 @@ struct BraindumpWriteView: View {
                 drawingCanvasArea
             }
         }
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
     }
 
     private var modePicker: some View {
@@ -185,7 +185,7 @@ struct BraindumpWriteView: View {
 
     private var savedOverlay: some View {
         ZStack {
-            AppTheme.appGradient
+            Color.white
                 .ignoresSafeArea()
                 .onTapGesture {
                     showSavedPopup = false

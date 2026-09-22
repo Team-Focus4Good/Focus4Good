@@ -51,7 +51,7 @@ struct BraindumpEntriesView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
         .navigationTitle(folder.name)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

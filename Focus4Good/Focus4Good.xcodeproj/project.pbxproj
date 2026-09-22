@@ -274,6 +274,7 @@
 				DEVELOPMENT_TEAM = 73B8W4ZN6V;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = HummingBird;
 				INFOPLIST_KEY_NSCameraUsageDescription = "To scan your schedule and handwritten notes";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "To scan schedule from photo";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -310,6 +311,7 @@
 				DEVELOPMENT_TEAM = 73B8W4ZN6V;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = HummingBird;
 				INFOPLIST_KEY_NSCameraUsageDescription = "To scan your schedule and handwritten notes";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "To scan schedule from photo";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

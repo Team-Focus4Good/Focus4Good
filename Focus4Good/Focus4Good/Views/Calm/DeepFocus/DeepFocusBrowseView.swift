@@ -73,7 +73,7 @@ struct DeepFocusBrowseView: View {
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showCompletion)
         }
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { loadFavourite() }
         .onDisappear { stopTimer() }
