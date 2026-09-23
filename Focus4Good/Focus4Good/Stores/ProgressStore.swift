@@ -5,9 +5,13 @@ import Supabase
 @Observable
 class ProgressStore {
     
-    var progressRecords: [UserProgress] = []
+    var progressRecords: [UserProgress] = [] {
+        didSet { saveToLocal() }
+    }
     var isLoading: Bool = false
     var errorMessage: String?
+    
+    private let localDataKey = "saved_user_progress"
     
     // Computed properties — UNCHANGED
     var dailyProgress: UserProgress? {
@@ -22,7 +26,9 @@ class ProgressStore {
     
     static let shared = ProgressStore()
     private var client: SupabaseClient { SupabaseManager.shared.client }
-    init() {}
+    init() {
+        loadFromLocal()
+    }
     
     // MARK: - Fetch from Supabase
     func fetchProgress(userId: UUID) async {
@@ -37,6 +43,7 @@ class ProgressStore {
             progressRecords = fetched
         } catch {
             errorMessage = error.localizedDescription
+            print("Fallback: Using locally cached progress")
         }
         isLoading = false
     }
@@ -90,6 +97,9 @@ class ProgressStore {
                     taskGoal: defaultTaskGoal(for: periodType)
                 )
                 mutation(&newRecord)
+                // Instantly append so local state updates even if network fails
+                progressRecords.append(newRecord)
+                
                 do {
                     let inserted: UserProgress = try await client
                         .from("user_progress")
@@ -98,7 +108,10 @@ class ProgressStore {
                         .single()
                         .execute()
                         .value
-                    progressRecords.append(inserted)
+                    
+                    if let newIndex = progressRecords.firstIndex(where: { $0.id == newRecord.id }) {
+                        progressRecords[newIndex] = inserted
+                    }
                 } catch {
                     errorMessage = error.localizedDescription
                 }
@@ -127,5 +140,26 @@ class ProgressStore {
     // MARK: - Clear (called on sign-out)
     func clearData() {
         progressRecords = []
+        UserDefaults.standard.removeObject(forKey: localDataKey)
+    }
+    
+    // MARK: - Local Persistence
+    private func saveToLocal() {
+        do {
+            let data = try JSONEncoder().encode(progressRecords)
+            UserDefaults.standard.set(data, forKey: localDataKey)
+        } catch {
+            print("Failed to save progress to local storage: \(error)")
+        }
+    }
+
+    private func loadFromLocal() {
+        guard let data = UserDefaults.standard.data(forKey: localDataKey) else { return }
+        do {
+            let records = try JSONDecoder().decode([UserProgress].self, from: data)
+            self.progressRecords = records
+        } catch {
+            print("Failed to load progress from local storage: \(error)")
+        }
     }
 }

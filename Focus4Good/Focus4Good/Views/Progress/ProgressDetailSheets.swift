@@ -25,6 +25,7 @@ enum ProgressSheetType: Identifiable {
 struct StreakDetailSheet: View {
     let currentStreak: Int
     let bestStreak: Int
+    var completionDates: Set<String> = []
 
     @Environment(\.dismiss) private var dismiss
 
@@ -32,18 +33,21 @@ struct StreakDetailSheet: View {
     private let totalDays = 91
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 7)
 
-    // Simulated active days based on streak data
+    // Real active days based on actual task completion dates
     private var activeDays: Set<Int> {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
         var days = Set<Int>()
-        // Current streak: last N days are active
-        for i in 0..<min(currentStreak, totalDays) {
-            days.insert(totalDays - 1 - i)
-        }
-        // Sprinkle some historical activity for realism
-        let seed = bestStreak * 7
-        for i in stride(from: currentStreak + 2, to: totalDays, by: max(2, 7 - bestStreak / 5)) {
-            if (i * seed) % 3 != 0 {
-                days.insert(totalDays - 1 - i)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+
+        for dateString in completionDates {
+            if let date = formatter.date(from: dateString) {
+                let dayOffset = cal.dateComponents([.day], from: cal.startOfDay(for: date), to: today).day ?? 0
+                if dayOffset >= 0 && dayOffset < totalDays {
+                    days.insert(totalDays - 1 - dayOffset)
+                }
             }
         }
         return days
@@ -517,6 +521,8 @@ struct TimeSpentDetailSheet: View {
     let focusMinutes: Int
     let calmMinutes: Int
     let period: ProgressPeriod
+    var dailyFocusMinutes: [String: Int] = [:]
+    var dailyCalmMinutes: [String: Int] = [:]
 
     @Environment(\.dismiss) private var dismiss
 
@@ -539,21 +545,23 @@ struct TimeSpentDetailSheet: View {
         return totalMinutes / max(days, 1)
     }
 
-    // Generate daily time data
+    // Real daily time data from tracked sessions
     private var dailyTimeData: [(label: String, focus: Int, calm: Int)] {
         let dayCount = period == .weekly ? 7 : 28
         let formatter = DateFormatter()
         formatter.dateFormat = period == .weekly ? "EEE" : "d"
+        let keyFormatter = DateFormatter()
+        keyFormatter.dateFormat = "yyyy-MM-dd"
+        keyFormatter.locale = Locale(identifier: "en_US_POSIX")
         let cal = Calendar.current
         let today = Date()
 
-        // Distribute time across days with some variation
         return (0..<dayCount).reversed().map { offset in
             let date = cal.date(byAdding: .day, value: -offset, to: today)!
             let label = formatter.string(from: date)
-            let dayHash = (cal.component(.day, from: date) * 17 + cal.component(.month, from: date) * 31) % 10
-            let focusForDay = max(0, focusMinutes / max(dayCount, 1) + (dayHash - 5) * 3)
-            let calmForDay = max(0, calmMinutes / max(dayCount, 1) + ((dayHash + 3) % 7 - 3) * 2)
+            let key = keyFormatter.string(from: date)
+            let focusForDay = dailyFocusMinutes[key] ?? 0
+            let calmForDay = dailyCalmMinutes[key] ?? 0
             return (label, focusForDay, calmForDay)
         }
     }
@@ -726,6 +734,10 @@ struct FocusPointsDetailSheet: View {
     let currentLevel: Int
     let periodPoints: Int
     let period: ProgressPeriod
+    var dailyPoints: [String: Int] = [:]
+    var focusSessionPoints: Int = 0
+    var taskCompletionPoints: Int = 0
+    var calmCentrePoints: Int = 0
 
     @Environment(\.dismiss) private var dismiss
 
@@ -739,32 +751,32 @@ struct FocusPointsDetailSheet: View {
         return min(Double(max(inLevel, 0)) / Double(max(needed - currentLevel * 500, 1)), 1.0)
     }
 
-    // Points bar data
+    // Real points bar data from tracked daily points
     private var pointsBarData: [(label: String, value: Int)] {
         let dayCount = period == .weekly ? 7 : 28
         let formatter = DateFormatter()
         formatter.dateFormat = period == .weekly ? "EEE" : "d"
+        let keyFormatter = DateFormatter()
+        keyFormatter.dateFormat = "yyyy-MM-dd"
+        keyFormatter.locale = Locale(identifier: "en_US_POSIX")
         let cal = Calendar.current
         let today = Date()
 
         return (0..<dayCount).reversed().map { offset in
             let date = cal.date(byAdding: .day, value: -offset, to: today)!
             let label = formatter.string(from: date)
-            let dayHash = (cal.component(.day, from: date) * 13 + cal.component(.month, from: date) * 29) % 10
-            let points = max(0, periodPoints / max(dayCount, 1) + (dayHash - 4) * 8)
+            let key = keyFormatter.string(from: date)
+            let points = dailyPoints[key] ?? 0
             return (label, points)
         }
     }
 
-    // Points breakdown
+    // Real points breakdown from actual sources
     private var breakdown: [(label: String, icon: String, points: Int, color: Color)] {
-        let focusPts = Int(Double(periodPoints) * 0.6)
-        let taskPts = Int(Double(periodPoints) * 0.25)
-        let calmPts = periodPoints - focusPts - taskPts
         return [
-            ("Focus Sessions", "person.fill", focusPts, AppTheme.orange),
-            ("Task Completion", "checkmark.circle.fill", taskPts, AppTheme.sage),
-            ("Calm Centre", "figure.mind.and.body", calmPts, AppTheme.sky),
+            ("Focus Sessions", "person.fill", focusSessionPoints, AppTheme.orange),
+            ("Task Completion", "checkmark.circle.fill", taskCompletionPoints, AppTheme.sage),
+            ("Calm Centre", "figure.mind.and.body", calmCentrePoints, AppTheme.sky),
         ]
     }
 
@@ -980,15 +992,21 @@ struct BarGraphView: View {
                             // Bar
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
                                 .fill(
-                                    LinearGradient(
-                                        colors: [barColor, gradientEnd],
-                                        startPoint: .bottom,
-                                        endPoint: .top
-                                    )
+                                    item.value > 0
+                                        ? LinearGradient(
+                                            colors: [barColor, gradientEnd],
+                                            startPoint: .bottom,
+                                            endPoint: .top
+                                        )
+                                        : LinearGradient(
+                                            colors: [AppTheme.warmTextSecondary.opacity(0.12), AppTheme.warmTextSecondary.opacity(0.12)],
+                                            startPoint: .bottom,
+                                            endPoint: .top
+                                        )
                                 )
                                 .frame(
                                     width: barWidth,
-                                    height: max(4, graphHeight * CGFloat(item.value) / CGFloat(maxValue))
+                                    height: item.value > 0 ? max(6, graphHeight * CGFloat(item.value) / CGFloat(maxValue)) : 3
                                 )
                         }
                         .frame(maxWidth: .infinity)

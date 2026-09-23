@@ -95,7 +95,43 @@ class TaskStore {
     
     static let shared = TaskStore()
     private var client: SupabaseClient { SupabaseManager.shared.client }
-    init() {}
+    
+    private let tasksCacheKey = "cached_user_tasks"
+    private let completionsCacheKey = "cached_task_completions"
+    
+    init() {
+        loadLocalData()
+    }
+    
+    // MARK: - Local Persistence
+    private func loadLocalData() {
+        if let data = UserDefaults.standard.data(forKey: tasksCacheKey),
+           let cached = try? JSONDecoder().decode([UserTask].self, from: data) {
+            self.tasks = cached.map { normalizeTaskDates($0) }
+            print("📦 Loaded \(self.tasks.count) tasks from local storage")
+        }
+        if let data = UserDefaults.standard.data(forKey: completionsCacheKey),
+           let rawMap = try? JSONDecoder().decode([String: [String]].self, from: data) {
+            var map: [UUID: Set<String>] = [:]
+            for (k, v) in rawMap {
+                if let uuid = UUID(uuidString: k) {
+                    map[uuid] = Set(v)
+                }
+            }
+            self.taskCompletions = map
+            print("📦 Loaded completions for \(map.count) tasks from local storage")
+        }
+    }
+    
+    private func saveTasksLocally() {
+        if let data = try? JSONEncoder().encode(tasks) {
+            UserDefaults.standard.set(data, forKey: tasksCacheKey)
+        }
+        let rawMap = Dictionary(uniqueKeysWithValues: taskCompletions.map { ($0.key.uuidString, Array($0.value)) })
+        if let data = try? JSONEncoder().encode(rawMap) {
+            UserDefaults.standard.set(data, forKey: completionsCacheKey)
+        }
+    }
     
     // MARK: - Date Normalization
     /// Normalizes scheduledDate and endDate to startOfDay to eliminate timezone drift
@@ -123,59 +159,77 @@ class TaskStore {
                 .order("created_at", ascending: false)
                 .execute()
                 .value
-            // Normalize all dates to startOfDay to avoid timezone drift
-            tasks = fetched.map { normalizeTaskDates($0) }
-            print("✅ Fetched \(fetched.count) tasks")
-            for t in tasks {
-                print("   📋 \(t.title) | scheduledDate=\(String(describing: t.scheduledDate)) | endDate=\(String(describing: t.endDate)) | repeat=\(t.repeatType)")
+            
+            if !fetched.isEmpty {
+                let normalizedFetched = fetched.map { normalizeTaskDates($0) }
+                // Merge fetched with any local-only tasks to never lose newly created offline tasks
+                var merged = normalizedFetched
+                let fetchedIds = Set(normalizedFetched.map { $0.id })
+                for localTask in tasks where !fetchedIds.contains(localTask.id) {
+                    merged.append(localTask)
+                }
+                tasks = merged
+                saveTasksLocally()
+                print("✅ Synced \(tasks.count) tasks from Supabase")
             }
         } catch {
-            // Auth bypassed — suppress user-facing error
-            print("❌ fetchTasks error: \(error)")
+            // Auth bypassed or offline — preserve local tasks
+            print("⚠️ fetchTasks: \(error.localizedDescription), using \(tasks.count) local tasks")
         }
         isLoading = false
     }
     
     // MARK: - Add Task
     func addTask(_ task: UserTask) async {
+        // 1. Normalize dates
+        let taskToAdd = normalizeTaskDates(task)
+        print("📝 Adding task: \(taskToAdd.title) | scheduledDate=\(String(describing: taskToAdd.scheduledDate)) | endDate=\(String(describing: taskToAdd.endDate))")
+        
+        // 2. Insert into local tasks array immediately and persist
+        var updatedTasks = tasks
+        if let existingIndex = updatedTasks.firstIndex(where: { $0.id == taskToAdd.id }) {
+            updatedTasks[existingIndex] = taskToAdd
+        } else {
+            updatedTasks.insert(taskToAdd, at: 0)
+        }
+        tasks = updatedTasks // Force trigger SwiftUI observation
+        saveTasksLocally()
+        print("✅ Task inserted locally: \(taskToAdd.title)")
+        
+        // 3. Schedule notification if time is set
+        if taskToAdd.scheduledTime != nil {
+            await NotificationManager.shared.scheduleNotification(for: taskToAdd)
+        }
+        
+        // 4. Try syncing to Supabase in the background
         do {
-            // Normalize dates before sending to Supabase
-            let taskToInsert = normalizeTaskDates(task)
-            print("📝 Inserting task: \(taskToInsert.title) | scheduledDate=\(String(describing: taskToInsert.scheduledDate)) | endDate=\(String(describing: taskToInsert.endDate))")
-            
-            // Insert into Supabase
             let inserted: UserTask = try await client
                 .from("tasks")
-                .insert(taskToInsert)
+                .insert(taskToAdd)
                 .select()
                 .single()
                 .execute()
                 .value
             
-            // Normalize the decoded dates; fall back to original if Supabase decode lost them
             var finalTask = inserted
-            if finalTask.scheduledDate == nil && task.scheduledDate != nil {
-                finalTask.scheduledDate = Calendar.current.startOfDay(for: task.scheduledDate!)
-                print("⚠️ Supabase lost scheduledDate, restored from original: \(String(describing: finalTask.scheduledDate))")
+            if finalTask.scheduledDate == nil && taskToAdd.scheduledDate != nil {
+                finalTask.scheduledDate = Calendar.current.startOfDay(for: taskToAdd.scheduledDate!)
             } else {
                 finalTask = normalizeTaskDates(finalTask)
             }
-            if finalTask.endDate == nil && task.endDate != nil {
-                finalTask.endDate = Calendar.current.startOfDay(for: task.endDate!)
-                print("⚠️ Supabase lost endDate, restored from original: \(String(describing: finalTask.endDate))")
+            if finalTask.endDate == nil && taskToAdd.endDate != nil {
+                finalTask.endDate = Calendar.current.startOfDay(for: taskToAdd.endDate!)
             }
             
-            // Add to local array — @MainActor ensures UI updates
-            tasks.insert(finalTask, at: 0)
-            print("✅ Task inserted: \(finalTask.title) | scheduledDate=\(String(describing: finalTask.scheduledDate)) | endDate=\(String(describing: finalTask.endDate))")
-            
-            // Schedule local notification if needed
-            if task.scheduledTime != nil {
-                await NotificationManager.shared.scheduleNotification(for: finalTask)
+            if let idx = tasks.firstIndex(where: { $0.id == taskToAdd.id || $0.id == finalTask.id }) {
+                var updated = tasks
+                updated[idx] = finalTask
+                tasks = updated
+                saveTasksLocally()
             }
+            print("☁️ Task synced to Supabase: \(finalTask.title)")
         } catch {
-            // Auth bypassed — suppress user-facing error
-            print("❌ addTask error: \(error)")
+            print("⚠️ Supabase sync skipped/failed (offline/bypassed): \(error.localizedDescription)")
         }
     }
     
@@ -188,41 +242,42 @@ class TaskStore {
     
     // MARK: - Update Task
     func updateTask(_ task: UserTask) async {
+        let normalized = normalizeTaskDates(task)
+        if let index = tasks.firstIndex(where: { $0.id == normalized.id }) {
+            tasks[index] = normalized
+            saveTasksLocally()
+            await NotificationManager.shared.cancelNotification(for: normalized.id)
+            if normalized.scheduledTime != nil {
+                await NotificationManager.shared.scheduleNotification(for: normalized)
+            }
+        }
+        
         do {
             try await client
                 .from("tasks")
-                .update(task)
-                .eq("id", value: task.id.uuidString)
+                .update(normalized)
+                .eq("id", value: normalized.id.uuidString)
                 .execute()
-            
-            // Update locally with normalized dates
-            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
-                await NotificationManager.shared.cancelNotification(for: task.id)
-                tasks[index] = normalizeTaskDates(task)
-                if task.scheduledTime != nil {
-                    await NotificationManager.shared.scheduleNotification(for: task)
-                }
-            }
         } catch {
-            // Auth bypassed — suppress user-facing error
-            print("❌ updateTask error: \(error)")
+            print("⚠️ updateTask Supabase sync error: \(error.localizedDescription)")
         }
     }
     
     // MARK: - Delete Task
     func deleteTask(_ task: UserTask) async {
+        tasks.removeAll { $0.id == task.id }
+        taskCompletions.removeValue(forKey: task.id)
+        saveTasksLocally()
+        await NotificationManager.shared.cancelNotification(for: task.id)
+        
         do {
             try await client
                 .from("tasks")
                 .delete()
                 .eq("id", value: task.id.uuidString)
                 .execute()
-            
-            await NotificationManager.shared.cancelNotification(for: task.id)
-            tasks.removeAll { $0.id == task.id }
         } catch {
-            // Auth bypassed — suppress user-facing error
-            print("❌ deleteTask error: \(error)")
+            print("⚠️ deleteTask Supabase sync error: \(error.localizedDescription)")
         }
     }
     
@@ -238,6 +293,8 @@ class TaskStore {
         await updateTask(updated)
         if updated.isCompleted, let userId = UserStore.shared.currentUser?.id {
             await ProgressStore.shared.incrementTasksCompleted(userId: userId)
+            await ProgressStore.shared.addPointsEarned(points: 10, userId: userId)
+            await UserStore.shared.updateFocusPoints(by: 10)
         }
     }
     
@@ -267,7 +324,11 @@ class TaskStore {
         let isCurrentlyCompleted = taskCompletions[task.id]?.contains(dateKey) ?? false
         
         if isCurrentlyCompleted {
-            // Remove completion
+            // Remove completion locally immediately
+            taskCompletions[task.id]?.remove(dateKey)
+            saveTasksLocally()
+            print("✅ Removed completion locally for \(task.title) on \(dateKey)")
+            
             do {
                 try await client
                     .from("task_completions")
@@ -275,15 +336,25 @@ class TaskStore {
                     .eq("task_id", value: task.id.uuidString)
                     .eq("completed_date", value: dateKey)
                     .execute()
-                
-                taskCompletions[task.id]?.remove(dateKey)
-                print("✅ Removed completion for \(task.title) on \(dateKey)")
             } catch {
-                // Auth bypassed — suppress user-facing error
-                print("❌ Remove completion error: \(error)")
+                print("⚠️ Remove completion Supabase error: \(error.localizedDescription)")
             }
         } else {
-            // Add completion
+            // Add completion locally immediately
+            if taskCompletions[task.id] == nil {
+                taskCompletions[task.id] = []
+            }
+            taskCompletions[task.id]?.insert(dateKey)
+            saveTasksLocally()
+            print("✅ Added completion locally for \(task.title) on \(dateKey)")
+            
+            // Increment progress
+            if let userId = UserStore.shared.currentUser?.id {
+                await ProgressStore.shared.incrementTasksCompleted(userId: userId)
+                await ProgressStore.shared.addPointsEarned(points: 10, userId: userId)
+                await UserStore.shared.updateFocusPoints(by: 10)
+            }
+            
             do {
                 let completion = TaskCompletion(
                     taskId: task.id,
@@ -293,20 +364,8 @@ class TaskStore {
                     .from("task_completions")
                     .insert(completion)
                     .execute()
-                
-                if taskCompletions[task.id] == nil {
-                    taskCompletions[task.id] = []
-                }
-                taskCompletions[task.id]?.insert(dateKey)
-                print("✅ Added completion for \(task.title) on \(dateKey)")
-                
-                // Increment progress
-                if let userId = UserStore.shared.currentUser?.id {
-                    await ProgressStore.shared.incrementTasksCompleted(userId: userId)
-                }
             } catch {
-                // Auth bypassed — suppress user-facing error
-                print("❌ Add completion error: \(error)")
+                print("⚠️ Add completion Supabase error: \(error.localizedDescription)")
             }
         }
     }
@@ -321,17 +380,16 @@ class TaskStore {
                 .execute()
                 .value
             
-            var completions: [UUID: Set<String>] = [:]
             for c in fetched {
-                if completions[c.taskId] == nil {
-                    completions[c.taskId] = []
+                if taskCompletions[c.taskId] == nil {
+                    taskCompletions[c.taskId] = []
                 }
-                completions[c.taskId]?.insert(c.completedDate)
+                taskCompletions[c.taskId]?.insert(c.completedDate)
             }
-            taskCompletions = completions
+            saveTasksLocally()
             print("✅ Fetched \(fetched.count) task completions")
         } catch {
-            print("❌ fetchTaskCompletions error: \(error)")
+            print("⚠️ fetchTaskCompletions error: \(error.localizedDescription), using local completions")
         }
     }
     

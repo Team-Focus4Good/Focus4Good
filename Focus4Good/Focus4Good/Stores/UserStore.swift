@@ -29,7 +29,14 @@ class UserStore {
     
     init() {
         // Auth is bypassed — set up a mock user immediately
-        self.currentUser = DummyData.currentUser
+        var user = DummyData.currentUser
+        let savedPoints = UserDefaults.standard.object(forKey: "user_focus_points_\(user.id.uuidString)") as? Int ?? 0
+        let savedStreak = UserDefaults.standard.object(forKey: "user_current_streak_\(user.id.uuidString)") as? Int ?? 0
+        let savedBest = UserDefaults.standard.object(forKey: "user_best_streak_\(user.id.uuidString)") as? Int ?? 0
+        user.focusPoints = savedPoints
+        user.currentStreak = savedStreak
+        user.bestStreak = savedBest
+        self.currentUser = user
         self.isAuthenticated = true
         self.isSessionReady = true
     }
@@ -286,17 +293,20 @@ class UserStore {
     
     func updateFocusPoints(by amount: Int) async {
         guard var user = currentUser else { return }
-        let newPoints = user.focusPoints + amount
+        let newPoints = max(0, user.focusPoints + amount)
+        user.focusPoints = newPoints
+        currentUser = user
+        UserDefaults.standard.set(newPoints, forKey: "user_focus_points_\(user.id.uuidString)")
+        print("⭐️ Focus points updated: \(newPoints) (delta: \(amount))")
+        
         do {
             try await client
                 .from("profiles")
                 .update(["focus_points": newPoints])
                 .eq("id", value: user.id.uuidString)
                 .execute()
-            user.focusPoints = newPoints
-            currentUser = user
         } catch {
-            errorMessage = error.localizedDescription
+            print("⚠️ Supabase sync updateFocusPoints: \(error.localizedDescription)")
         }
     }
     
@@ -350,6 +360,83 @@ class UserStore {
         return true
     }
     
+    func calculateStreak(from completionDates: Set<String>) -> (current: Int, best: Int) {
+        guard !completionDates.isEmpty else { return (0, 0) }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+
+        var currentStreak = 0
+        var checkDate = today
+        let todayStr = formatter.string(from: today)
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+        let yesterdayStr = formatter.string(from: yesterday)
+
+        if completionDates.contains(todayStr) {
+            checkDate = today
+        } else if completionDates.contains(yesterdayStr) {
+            checkDate = yesterday
+        } else {
+            return (0, calculateBestStreak(from: completionDates, formatter: formatter, cal: cal))
+        }
+
+        while completionDates.contains(formatter.string(from: checkDate)) {
+            currentStreak += 1
+            guard let prev = cal.date(byAdding: .day, value: -1, to: checkDate) else { break }
+            checkDate = prev
+        }
+
+        let bestStreak = max(currentStreak, calculateBestStreak(from: completionDates, formatter: formatter, cal: cal))
+        return (currentStreak, bestStreak)
+    }
+
+    private func calculateBestStreak(from completionDates: Set<String>, formatter: DateFormatter, cal: Calendar) -> Int {
+        let dates = completionDates.compactMap { formatter.date(from: $0) }.map { cal.startOfDay(for: $0) }.sorted()
+        var bestStreak = 0
+        var runningStreak = 0
+        var prevDate: Date? = nil
+
+        for d in dates {
+            if let p = prevDate {
+                let diff = cal.dateComponents([.day], from: p, to: d).day ?? 0
+                if diff == 1 {
+                    runningStreak += 1
+                } else if diff > 1 {
+                    runningStreak = 1
+                }
+            } else {
+                runningStreak = 1
+            }
+            prevDate = d
+            bestStreak = max(bestStreak, runningStreak)
+        }
+        return bestStreak
+    }
+
+    func updateStreakFromCompletions(_ completionDates: Set<String>) async {
+        let (current, best) = calculateStreak(from: completionDates)
+        guard var user = currentUser else { return }
+        if user.currentStreak != current || user.bestStreak != best {
+            user.currentStreak = current
+            user.bestStreak = max(user.bestStreak, best)
+            currentUser = user
+            UserDefaults.standard.set(user.currentStreak, forKey: "user_current_streak_\(user.id.uuidString)")
+            UserDefaults.standard.set(user.bestStreak, forKey: "user_best_streak_\(user.id.uuidString)")
+            
+            do {
+                try await client
+                    .from("profiles")
+                    .update(["current_streak": current, "best_streak": user.bestStreak])
+                    .eq("id", value: user.id.uuidString)
+                    .execute()
+            } catch {
+                print("⚠️ Supabase sync streak error: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func updateStreak(newStreak: Int) async {
         guard var user = currentUser else { return }
         do {

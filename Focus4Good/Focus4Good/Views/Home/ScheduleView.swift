@@ -18,9 +18,14 @@ struct ScheduleView: View {
                 if c1 != c2 {
                     return !c1 && c2
                 }
-                guard let time1 = task1.scheduledTime else { return false }
-                guard let time2 = task2.scheduledTime else { return true }
-                return time1 < time2
+                if let time1 = task1.scheduledTime, let time2 = task2.scheduledTime {
+                    return time1 < time2
+                } else if task1.scheduledTime != nil {
+                    return true
+                } else if task2.scheduledTime != nil {
+                    return false
+                }
+                return task1.createdAt < task2.createdAt
             }
     }
 
@@ -45,7 +50,7 @@ struct ScheduleView: View {
         .navigationTitle("Schedule")
         .navigationBarTitleDisplayMode(.large)
         .sheet(isPresented: $showAddTask) {
-            AddTaskSheet()
+            AddTaskSheet(initialDate: selectedDate)
         }
 
         .navigationDestination(item: $selectedTask) { task in
@@ -84,6 +89,7 @@ struct ScheduleView: View {
             Text("Tap + to add one")
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.warmTextSecondary.opacity(0.7))
+
             Spacer()
         }
     }
@@ -164,6 +170,12 @@ struct ScheduleView: View {
                 ForEach(tasksForSelectedDate) { task in
                     TaskRowView(task: task, date: selectedDate, selectedTask: $selectedTask)
                         .listRowBackground(AppTheme.cardBg)
+                }
+                .onDelete { indexSet in
+                    for index in indexSet {
+                        let taskToDelete = tasksForSelectedDate[index]
+                        Task { await taskStore.deleteTask(taskToDelete) }
+                    }
                 }
             } header: {
                 HStack {

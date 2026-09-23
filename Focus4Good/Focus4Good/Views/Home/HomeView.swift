@@ -5,6 +5,7 @@ import SwiftUI
 enum HomeDestination: Hashable {
     case schedule
     case ngoList
+    case pomodoro(UserTask)
 }
 
 // MARK: - HomeView
@@ -17,6 +18,8 @@ struct HomeView: View {
     @State private var showProfile = false
     @State private var appeared = false
     @State private var profileImage: UIImage? = nil
+    @State private var showRescueMe = false
+    @State private var rescueTask: UserTask? = nil
 
     private var profileImageKey: String {
         "profileImage_\(userStore.currentUser?.id.uuidString ?? "default")"
@@ -26,7 +29,7 @@ struct HomeView: View {
         let today = Date()
         let todayTasks = taskStore.todaysTasks
         let total = todayTasks.count
-        guard total > 0 else { return 0.65 }
+        guard total > 0 else { return 0 }
         return Double(todayTasks.filter { taskStore.isTaskCompleted($0, on: today) }.count) / Double(total)
     }
 
@@ -45,23 +48,27 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             GeometryReader { geo in
-                let hPad: CGFloat = 18
-                let topPad: CGFloat = 6
-                let spacing: CGFloat = 12
-                let usable = geo.size.height - topPad - spacing * 2
+                let hPad: CGFloat = 20
+                let topPad: CGFloat = 12
+                let bottomPad: CGFloat = 12
+                let spacing: CGFloat = 16
+                let cardW = geo.size.width - hPad * 2
+                let usable = geo.size.height - topPad - bottomPad - spacing * 2
 
-                // Proportions matched to reference: planner ~35%, stats ~25%, ngo ~35%
-                let plannerH = usable * 0.345
-                let statsH   = usable * 0.265
-                let ngoH     = usable * 0.345
+                // Slightly reduce sizes for cards as requested by user
+                let rescueH = cardW * 0.45
+                let remainingH = max(usable - rescueH, 200)
+                let plannerH = remainingH * 0.52
+                let statsH   = remainingH * 0.44
 
                 VStack(spacing: spacing) {
-                    plannerCard(height: plannerH, width: geo.size.width - hPad * 2)
+                    plannerCard(height: plannerH, width: cardW)
                     statsRow(height: statsH)
-                    ngoConnectCard(height: ngoH, width: geo.size.width - hPad * 2)
+                    rescueMeCard(height: rescueH, width: cardW)
                 }
                 .padding(.horizontal, hPad)
                 .padding(.top, topPad)
+                .padding(.bottom, bottomPad)
             }
             .background(homeBackground)
             .navigationTitle("Home")
@@ -93,8 +100,15 @@ struct HomeView: View {
             }
             .navigationDestination(for: HomeDestination.self) { dest in
                 switch dest {
-                case .schedule:  ScheduleView()
-                case .ngoList:   NGOListView()
+                case .schedule:       ScheduleView()
+                case .ngoList:        NGOListView()
+                case .pomodoro(let t): PomodoroView(task: t)
+                }
+            }
+            .sheet(isPresented: $showRescueMe) {
+                RescueMeView { task in
+                    rescueTask = task
+                    navigationPath.append(HomeDestination.pomodoro(task))
                 }
             }
             .onAppear {
@@ -368,7 +382,7 @@ struct HomeView: View {
 
             Spacer(minLength: 0)
 
-            Text(progress >= 1.0 ? "Completed!" : "On track!")
+            Text(progress >= 1.0 ? "Completed!" : (progress > 0 ? "On track!" : "Start today!"))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(progress >= 1.0 ? AppTheme.sage : AppTheme.warmTextSecondary)
                 .padding(.bottom, 14)
@@ -379,107 +393,20 @@ struct HomeView: View {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // MARK: - NGO Connect Card
+    // MARK: - Rescue Me Card
     // ─────────────────────────────────────────────────────────────────
 
     @ViewBuilder
-    private func ngoConnectCard(height: CGFloat, width: CGFloat) -> some View {
+    private func rescueMeCard(height: CGFloat, width: CGFloat) -> some View {
         Button {
-            navigationPath.append(HomeDestination.ngoList)
+            showRescueMe = true
         } label: {
-            ZStack(alignment: .bottom) {
-                // Full-bleed hero image
-                Image("ngo")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(height: height)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-
-                // Dark gradient overlay for text readability
-                LinearGradient(
-                    colors: [
-                        .clear,
-                        Color.black.opacity(0.15),
-                        Color.black.opacity(0.65),
-                        Color.black.opacity(0.82)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
-                // Content overlay
-                VStack(alignment: .leading, spacing: 10) {
-                    Spacer()
-
-                    // Title & subtitle
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("NGO Connect")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(.white)
-
-                        Text("Every focus point you earn helps fund a child's education")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.8))
-                            .lineLimit(2)
-                    }
-
-                    // Progress bar
-                    VStack(spacing: 6) {
-                        GeometryReader { geo in
-                            let progressWidth = geo.size.width * CGFloat(min(Double(focusPoints) / 10000.0, 1.0))
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(.white.opacity(0.2))
-                                    .frame(height: 5)
-                                Capsule()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [AppTheme.orange, AppTheme.amber],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .frame(width: max(5, progressWidth), height: 5)
-                                    .shadow(color: AppTheme.orange.opacity(0.5), radius: 4, y: 0)
-                            }
-                        }
-                        .frame(height: 5)
-
-                        HStack {
-                            Text("\(focusPoints) / 10,000 points")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.6))
-                            Spacer()
-                            HStack(spacing: 4) {
-                                Text("Learn More")
-                                    .font(.system(size: 11, weight: .semibold))
-                                Image(systemName: "arrow.right")
-                                    .font(.system(size: 10, weight: .bold))
-                            }
-                            .foregroundStyle(AppTheme.orange)
-                        }
-                    }
-                }
-                .padding(16)
-            }
-            .frame(height: height)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 6)
-            // Points badge pinned to top-right corner
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: 5) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 10, weight: .bold))
-                    Text("\(focusPoints) pts")
-                        .font(.system(size: 11, weight: .bold))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
-                .padding(12)
-            }
+            Image("rescuemecard")
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: height)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: AppTheme.orange.opacity(0.14), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(HomeCardButtonStyle())
         .opacity(appeared ? 1 : 0)

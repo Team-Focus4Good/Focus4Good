@@ -3,12 +3,12 @@ import Foundation
 struct DummyData {
 
     static let currentUser = User(
-        id: UUID(),
+        id: UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F") ?? UUID(),
         fullName: "Appoorva Khajuria",
         email: "appoorva2025@gmail.com",
         profileImageUrl: nil,
         authProvider: "email",
-        focusPoints: 5000,
+        focusPoints: 0,
         currentLevel: 1,
         bestStreak: 0,
         currentStreak: 0

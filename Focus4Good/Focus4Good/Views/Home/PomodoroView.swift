@@ -98,9 +98,9 @@ struct PomodoroView: View {
         .animation(.easeInOut(duration: 0.3), value: showPomodoroCompletePopup)
         .onDisappear { timer?.invalidate() }
         .sheet(isPresented: $showOverwhelmedSheet) {
-            OverwhelmedSheet()
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
+            OverwhelmedSheet {
+                dismiss() // End session when user feels overwhelmed
+            }
         }
         .alert("End Session?", isPresented: $showEndSessionAlert) {
             Button("Keep Going", role: .cancel) {}
@@ -423,14 +423,25 @@ struct PomodoroView: View {
         }
     }
 
-    private var distractionEmoji: String {
+    private var distractionSFSymbol: String {
         switch distractedCount {
-        case 0:  return "😌"
-        case 1:  return "😐"
-        case 2:  return "😟"
-        case 3:  return "😣"
-        case 4:  return "😰"
-        default: return "🤯"
+        case 0:  return "face.smiling"
+        case 1:  return "face.smiling.inverse"
+        case 2:  return "exclamationmark.circle"
+        case 3:  return "wind"
+        case 4:  return "alarm"
+        default: return "brain.head.profile"
+        }
+    }
+
+    private var distractionSymbolColor: Color {
+        switch distractedCount {
+        case 0:  return AppTheme.sage
+        case 1:  return AppTheme.warmTextSecondary
+        case 2:  return AppTheme.amber
+        case 3:  return AppTheme.amber
+        case 4:  return AppTheme.orange
+        default: return Color(hex: "EF4444")
         }
     }
 
@@ -449,8 +460,9 @@ struct PomodoroView: View {
         VStack(spacing: 12) {
             if distractedCount > 0 {
                 HStack(spacing: 8) {
-                    Text(distractionEmoji)
-                        .font(.system(size: 28))
+                    Image(systemName: distractionSFSymbol)
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(distractionSymbolColor)
                         .id(distractedCount)
                         .transition(.scale.combined(with: .opacity))
                     Text(distractionMessage)
@@ -623,32 +635,53 @@ struct PomodoroSessionPopup: View {
 // MARK: - Overwhelmed Sheet
 struct OverwhelmedSheet: View {
     @Environment(\.dismiss) private var dismiss
+    var onGoToCalmCentre: () -> Void
 
     var body: some View {
         VStack(spacing: 24) {
             Image(systemName: "figure.mind.and.body")
-                .font(.system(size: 52)).foregroundStyle(AppTheme.orange).padding(.top, 32)
+                .font(.system(size: 52))
+                .foregroundStyle(AppTheme.orange)
+                .padding(.top, 32)
 
             VStack(spacing: 8) {
-                Text("Feeling a little overwhelmed?").font(.title3.bold()).foregroundStyle(AppTheme.warmTextPrimary).multilineTextAlignment(.center)
-                Text("You seem quite distracted right now. Would you like to take a short meditation break and reset your focus?")
-                    .font(.subheadline).foregroundStyle(AppTheme.warmTextSecondary)
-                    .multilineTextAlignment(.center).padding(.horizontal, 24)
+                Text("Feeling a little overwhelmed?")
+                    .font(.title3.bold())
+                    .foregroundStyle(AppTheme.warmTextPrimary)
+                    .multilineTextAlignment(.center)
+                Text("You seem quite distracted right now. Would you like to take a short break and reset your focus?")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.warmTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
             }
 
             VStack(spacing: 12) {
-                Text("Go to Calm Centre")
-                    .font(.headline).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).frame(height: 52)
-                    .background(Capsule().fill(AppTheme.orange))
-                    .padding(.horizontal, 32)
+                Button {
+                    dismiss()
+                    onGoToCalmCentre()
+                } label: {
+                    Text("End Session")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Capsule().fill(AppTheme.orange))
+                }
+                .padding(.horizontal, 32)
 
-                Button { dismiss() } label: {
-                    Text("Stay in session").font(.subheadline).foregroundStyle(AppTheme.warmTextSecondary)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Stay in session")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.warmTextSecondary)
                 }
             }
             .padding(.bottom, 32)
         }
+        .presentationDetents([.fraction(0.5)])
+        .presentationDragIndicator(.visible)
         .background(AppTheme.pageGradient)
     }
 }

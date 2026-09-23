@@ -59,7 +59,11 @@ struct BreatheSessionView: View {
     @State private var phaseStartTime: Date? = nil
     @State private var elapsedPauseTime: TimeInterval = 0.0
 
-    private let userId = UUID()
+    @Environment(UserStore.self) private var userStore
+    
+    private var userId: UUID {
+        userStore.currentUser?.id ?? UUID()
+    }
 
     var body: some View {
         ZStack {
