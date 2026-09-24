@@ -96,21 +96,23 @@ class TaskStore {
     static let shared = TaskStore()
     private var client: SupabaseClient { SupabaseManager.shared.client }
     
-    private let tasksCacheKey = "cached_user_tasks"
-    private let completionsCacheKey = "cached_task_completions"
+    // Cache keys are user-scoped to prevent data leaking between accounts
+    private func tasksCacheKey(for userId: UUID) -> String { "cached_user_tasks_\(userId.uuidString)" }
+    private func completionsCacheKey(for userId: UUID) -> String { "cached_task_completions_\(userId.uuidString)" }
     
     init() {
-        loadLocalData()
+        // Do NOT load local data on init — data is loaded only after we know which
+        // user is authenticated (via fetchTasks(userId:))
     }
     
     // MARK: - Local Persistence
-    private func loadLocalData() {
-        if let data = UserDefaults.standard.data(forKey: tasksCacheKey),
+    private func loadLocalData(for userId: UUID) {
+        if let data = UserDefaults.standard.data(forKey: tasksCacheKey(for: userId)),
            let cached = try? JSONDecoder().decode([UserTask].self, from: data) {
             self.tasks = cached.map { normalizeTaskDates($0) }
-            print("📦 Loaded \(self.tasks.count) tasks from local storage")
+            print("📦 Loaded \(self.tasks.count) tasks from local storage for user \(userId.uuidString.prefix(8))")
         }
-        if let data = UserDefaults.standard.data(forKey: completionsCacheKey),
+        if let data = UserDefaults.standard.data(forKey: completionsCacheKey(for: userId)),
            let rawMap = try? JSONDecoder().decode([String: [String]].self, from: data) {
             var map: [UUID: Set<String>] = [:]
             for (k, v) in rawMap {
@@ -119,17 +121,27 @@ class TaskStore {
                 }
             }
             self.taskCompletions = map
-            print("📦 Loaded completions for \(map.count) tasks from local storage")
         }
     }
     
-    private func saveTasksLocally() {
+    private func saveTasksLocally(for userId: UUID) {
         if let data = try? JSONEncoder().encode(tasks) {
-            UserDefaults.standard.set(data, forKey: tasksCacheKey)
+            UserDefaults.standard.set(data, forKey: tasksCacheKey(for: userId))
         }
         let rawMap = Dictionary(uniqueKeysWithValues: taskCompletions.map { ($0.key.uuidString, Array($0.value)) })
         if let data = try? JSONEncoder().encode(rawMap) {
-            UserDefaults.standard.set(data, forKey: completionsCacheKey)
+            UserDefaults.standard.set(data, forKey: completionsCacheKey(for: userId))
+        }
+    }
+    
+    // Wipes in-memory state + cached data for a specific user (called on sign-out)
+    func clearData(for userId: UUID? = nil) {
+        tasks = []
+        categories = []
+        taskCompletions = [:]
+        if let uid = userId {
+            UserDefaults.standard.removeObject(forKey: tasksCacheKey(for: uid))
+            UserDefaults.standard.removeObject(forKey: completionsCacheKey(for: uid))
         }
     }
     
@@ -151,6 +163,11 @@ class TaskStore {
     // MARK: - Fetch Tasks from Supabase
     func fetchTasks(userId: UUID) async {
         isLoading = false
+        // Clear any stale in-memory data before loading for this user
+        tasks = []
+        taskCompletions = [:]
+        // Load this user's local cache
+        loadLocalData(for: userId)
         do {
             let fetched: [UserTask] = try await client
                 .from("tasks")
@@ -160,20 +177,21 @@ class TaskStore {
                 .execute()
                 .value
             
-            if !fetched.isEmpty {
-                let normalizedFetched = fetched.map { normalizeTaskDates($0) }
-                // Merge fetched with any local-only tasks to never lose newly created offline tasks
-                var merged = normalizedFetched
-                let fetchedIds = Set(normalizedFetched.map { $0.id })
-                for localTask in tasks where !fetchedIds.contains(localTask.id) {
+            let normalizedFetched = fetched.map { normalizeTaskDates($0) }
+            // Merge fetched with any local-only tasks (same user) to avoid losing offline-created tasks
+            var merged = normalizedFetched
+            let fetchedIds = Set(normalizedFetched.map { $0.id })
+            for localTask in tasks where !fetchedIds.contains(localTask.id) {
+                // Only keep local tasks that belong to this user
+                if localTask.userId == userId {
                     merged.append(localTask)
                 }
-                tasks = merged
-                saveTasksLocally()
-                print("✅ Synced \(tasks.count) tasks from Supabase")
             }
+            tasks = merged
+            saveTasksLocally(for: userId)
+            print("✅ Synced \(tasks.count) tasks from Supabase for user \(userId.uuidString.prefix(8))")
         } catch {
-            // Auth bypassed or offline — preserve local tasks
+            // Offline — keep the user's local cache that was already loaded
             print("⚠️ fetchTasks: \(error.localizedDescription), using \(tasks.count) local tasks")
         }
         isLoading = false
@@ -193,7 +211,7 @@ class TaskStore {
             updatedTasks.insert(taskToAdd, at: 0)
         }
         tasks = updatedTasks // Force trigger SwiftUI observation
-        saveTasksLocally()
+        if let userId = UserStore.shared.currentUser?.id { saveTasksLocally(for: userId) }
         print("✅ Task inserted locally: \(taskToAdd.title)")
         
         // 3. Schedule notification if time is set
@@ -225,7 +243,7 @@ class TaskStore {
                 var updated = tasks
                 updated[idx] = finalTask
                 tasks = updated
-                saveTasksLocally()
+                if let userId = UserStore.shared.currentUser?.id { saveTasksLocally(for: userId) }
             }
             print("☁️ Task synced to Supabase: \(finalTask.title)")
         } catch {
@@ -245,7 +263,7 @@ class TaskStore {
         let normalized = normalizeTaskDates(task)
         if let index = tasks.firstIndex(where: { $0.id == normalized.id }) {
             tasks[index] = normalized
-            saveTasksLocally()
+            if let userId = UserStore.shared.currentUser?.id { saveTasksLocally(for: userId) }
             await NotificationManager.shared.cancelNotification(for: normalized.id)
             if normalized.scheduledTime != nil {
                 await NotificationManager.shared.scheduleNotification(for: normalized)
@@ -267,7 +285,7 @@ class TaskStore {
     func deleteTask(_ task: UserTask) async {
         tasks.removeAll { $0.id == task.id }
         taskCompletions.removeValue(forKey: task.id)
-        saveTasksLocally()
+        if let userId = UserStore.shared.currentUser?.id { saveTasksLocally(for: userId) }
         await NotificationManager.shared.cancelNotification(for: task.id)
         
         do {
@@ -326,7 +344,7 @@ class TaskStore {
         if isCurrentlyCompleted {
             // Remove completion locally immediately
             taskCompletions[task.id]?.remove(dateKey)
-            saveTasksLocally()
+            if let userId = UserStore.shared.currentUser?.id { saveTasksLocally(for: userId) }
             print("✅ Removed completion locally for \(task.title) on \(dateKey)")
             
             do {
@@ -345,7 +363,7 @@ class TaskStore {
                 taskCompletions[task.id] = []
             }
             taskCompletions[task.id]?.insert(dateKey)
-            saveTasksLocally()
+            if let userId = UserStore.shared.currentUser?.id { saveTasksLocally(for: userId) }
             print("✅ Added completion locally for \(task.title) on \(dateKey)")
             
             // Increment progress
@@ -386,7 +404,7 @@ class TaskStore {
                 }
                 taskCompletions[c.taskId]?.insert(c.completedDate)
             }
-            saveTasksLocally()
+            saveTasksLocally(for: userId)
             print("✅ Fetched \(fetched.count) task completions")
         } catch {
             print("⚠️ fetchTaskCompletions error: \(error.localizedDescription), using local completions")

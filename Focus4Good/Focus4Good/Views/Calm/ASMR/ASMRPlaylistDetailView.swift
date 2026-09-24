@@ -4,6 +4,7 @@ struct ASMRPlaylistDetailView: View {
     
     let playlist: ASMRPlaylist
     @Environment(CalmCentreStore.self) private var store
+    @Environment(UserStore.self) private var userStore
     
     @State private var selectedSound: AsmrSound?
     
@@ -89,9 +90,7 @@ struct ASMRPlaylistDetailView: View {
                 }
                 
                 Button {
-                    if let random = playlist.sounds.randomElement() {
-                        play(sound: random)
-                    }
+                    ASMRAudioService.shared.shufflePlay(playlist: playlist.sounds)
                 } label: {
                     HStack {
                         Image(systemName: "shuffle")
@@ -164,13 +163,14 @@ struct ASMRPlaylistDetailView: View {
     }
     
     private func saveAsRecentPlaylist() {
-        // Save just the ID to UserDefaults
-        UserDefaults.standard.set(playlist.id.uuidString, forKey: "recent_asmr_playlist_id")
+        let userId = userStore.currentUser?.id.uuidString ?? "guest"
+        let key = "recent_asmr_playlist_id_\(userId)"
+        UserDefaults.standard.set(playlist.id.uuidString, forKey: key)
     }
     
     private func saveAsRecentSound(_ sound: AsmrSound) {
-        // Save up to 10 recently played sounds
-        let key = "recent_asmr_sounds"
+        let userId = userStore.currentUser?.id.uuidString ?? "guest"
+        let key = "recent_asmr_sounds_\(userId)"
         var recents: [AsmrSound] = []
         
         if let data = UserDefaults.standard.data(forKey: key),

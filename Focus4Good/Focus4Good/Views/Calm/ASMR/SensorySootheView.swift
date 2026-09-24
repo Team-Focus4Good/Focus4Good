@@ -11,9 +11,6 @@ struct SensorySootheView: View {
     @State private var recentPlaylist: ASMRPlaylist?
     @State private var recentSounds: [AsmrSound] = []
 
-    private static let recentPlaylistKey = "recent_asmr_playlist_id"
-    private static let recentSoundsKey = "recent_asmr_sounds"
-
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 32) {
@@ -53,16 +50,24 @@ struct SensorySootheView: View {
     // MARK: - Data Loading
     
     private func loadRecents() {
+        let userId = userStore.currentUser?.id.uuidString ?? "guest"
+        let playlistKey = "recent_asmr_playlist_id_\(userId)"
+        let soundsKey = "recent_asmr_sounds_\(userId)"
+        
         // Load recent playlist
-        if let savedIdString = UserDefaults.standard.string(forKey: Self.recentPlaylistKey),
+        if let savedIdString = UserDefaults.standard.string(forKey: playlistKey),
            let savedId = UUID(uuidString: savedIdString) {
             recentPlaylist = ASMRData.playlists.first(where: { $0.id == savedId })
+        } else {
+            recentPlaylist = nil
         }
         
         // Load recent sounds
-        if let data = UserDefaults.standard.data(forKey: Self.recentSoundsKey),
+        if let data = UserDefaults.standard.data(forKey: soundsKey),
            let saved = try? JSONDecoder().decode([AsmrSound].self, from: data) {
             recentSounds = saved
+        } else {
+            recentSounds = []
         }
     }
 

@@ -28,21 +28,32 @@ class UserStore {
     private var client: SupabaseClient { SupabaseManager.shared.client }
     
     init() {
-        // Auth is bypassed — set up a mock user immediately
-        var user = DummyData.currentUser
-        let savedPoints = UserDefaults.standard.object(forKey: "user_focus_points_\(user.id.uuidString)") as? Int ?? 0
-        let savedStreak = UserDefaults.standard.object(forKey: "user_current_streak_\(user.id.uuidString)") as? Int ?? 0
-        let savedBest = UserDefaults.standard.object(forKey: "user_best_streak_\(user.id.uuidString)") as? Int ?? 0
-        user.focusPoints = savedPoints
-        user.currentStreak = savedStreak
-        user.bestStreak = savedBest
-        self.currentUser = user
-        self.isAuthenticated = true
-        self.isSessionReady = true
-
         Task {
-            await self.loadUserData(userId: user.id)
+            await self.checkExistingSession()
         }
+    }
+    
+    // MARK: - Session Check
+    func checkExistingSession() async {
+        isLoading = true
+        do {
+            let session = try await client.auth.session
+            let userId = session.user.id
+            await fetchCurrentUser(userId: userId)
+            if currentUser != nil {
+                isAuthenticated = true
+                await loadUserData(userId: userId)
+            } else {
+                isAuthenticated = false
+                currentUser = nil
+            }
+        } catch {
+            print("No active auth session: \(error.localizedDescription)")
+            isAuthenticated = false
+            currentUser = nil
+        }
+        isSessionReady = true
+        isLoading = false
     }
     
     // MARK: - Auth
@@ -97,17 +108,22 @@ class UserStore {
             isMfaRequired = false
             await loadUserData(userId: userId)
             
-            // TEMPORARILY DISABLED 2FA
-            // self.isMfaRequired = true
-            // self.isLoading = false
-            // 
-            // // Call Edge Function to send OTP
-            // _ = try await client.functions.invoke(
-            //     "send-otp",
-            //     options: .init(body: ["email": email])
-            // )
         } catch {
-            errorMessage = "Invalid email or password"
+            print("⚠️ Sign-in error: \(error)")
+            let msg = error.localizedDescription.lowercased()
+            if msg.contains("invalid login") || msg.contains("invalid credentials") || msg.contains("wrong password") || msg.contains("email not found") {
+                errorMessage = "Invalid email or password."
+            } else if msg.contains("email not confirmed") || msg.contains("not confirmed") {
+                errorMessage = "Please verify your email address before signing in. Check your inbox for a confirmation link."
+            } else if msg.contains("rate limit") || msg.contains("too many") {
+                errorMessage = "Too many sign-in attempts. Please wait a few minutes and try again."
+            } else if msg.contains("network") || msg.contains("connection") || msg.contains("offline") || msg.contains("url session") {
+                errorMessage = "Network error. Please check your connection and try again."
+            } else if msg.contains("user not found") {
+                errorMessage = "No account found with this email. Please sign up first."
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
         isLoading = false
     }
@@ -175,6 +191,9 @@ class UserStore {
     }
     
     func signOut() {
+        let leavingUserId = currentUser?.id
+        // Stop any active audio playback
+        ASMRAudioService.shared.stop()
         // Sign out from Supabase (fire-and-forget is fine — we clear local state immediately)
         Task { try? await client.auth.signOut() }
         // Clear auth state
@@ -184,10 +203,8 @@ class UserStore {
         isLoading = false
         errorMessage = nil
         isMfaRequired = false
-        // Clear ALL cached store data
-        TaskStore.shared.tasks = []
-        TaskStore.shared.categories = []
-        TaskStore.shared.taskCompletions = [:]
+        // Clear ALL in-memory store data
+        TaskStore.shared.clearData(for: leavingUserId)
         ProgressStore.shared.clearData()
         CommunityStore.shared.clearData()
         CalmCentreStore.shared.clearData()
@@ -198,6 +215,10 @@ class UserStore {
     
     // MARK: - Password Reset
     func sendPasswordResetEmail(email: String) async throws {
+        // For OTP-based password reset, we do NOT pass redirectTo.
+        // Passing a custom URL scheme (e.g. focus4good://) causes Supabase's
+        // email service to reject the request with "Error sending recovery email".
+        // redirectTo is only needed for magic-link (non-OTP) mode.
         try await client.auth.resetPasswordForEmail(email)
     }
     
@@ -270,7 +291,25 @@ class UserStore {
                 .value
             currentUser = user
         } catch {
-            errorMessage = "Failed to load profile: \(error.localizedDescription)"
+            print("Profile fetch error, using fallback for \(userId): \(error)")
+            let sessionUser = try? await client.auth.session.user
+            let email = sessionUser?.email ?? ""
+            let name = (sessionUser?.userMetadata["full_name"] as? String) ?? email.components(separatedBy: "@").first ?? "User"
+            let newUser = User(
+                id: userId,
+                fullName: name.capitalized,
+                email: email,
+                profileImageUrl: nil,
+                authProvider: "email",
+                focusPoints: 0,
+                currentLevel: 1,
+                bestStreak: 0,
+                currentStreak: 0
+            )
+            currentUser = newUser
+            Task {
+                try? await client.from("profiles").insert(newUser).execute()
+            }
         }
         isLoading = false
     }

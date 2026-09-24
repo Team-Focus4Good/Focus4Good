@@ -14,7 +14,6 @@ struct AuthView: View {
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var showPassword = false
-    @State private var showForgotPassword = false
 
     private var isFormValid: Bool {
         if isSignUp {
@@ -103,19 +102,7 @@ struct AuthView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .padding(.horizontal, 24)
 
-                    // ── Forgot Password Button ───────────────────
-                    if !isSignUp {
-                        HStack {
-                            Spacer()
-                            Button("Forgot Password?") {
-                                showForgotPassword = true
-                            }
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(AppTheme.orange)
-                        }
-                        .padding(.horizontal, 28)
-                        .padding(.top, 8)
-                    }
+
 
                     // ── Error Message ─────────────────────────────
                     if let error = userStore.errorMessage {
@@ -231,9 +218,6 @@ struct AuthView: View {
                     .padding(.bottom, 16)
                 }
             }
-        }
-        .sheet(isPresented: $showForgotPassword) {
-            ForgotPasswordView()
         }
         // Watch for successful authentication → notify parent
         .onChange(of: userStore.isAuthenticated) { _, isAuth in

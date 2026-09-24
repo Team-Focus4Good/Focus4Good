@@ -5,13 +5,9 @@ import Supabase
 @Observable
 class ProgressStore {
     
-    var progressRecords: [UserProgress] = [] {
-        didSet { saveToLocal() }
-    }
+    var progressRecords: [UserProgress] = []
     var isLoading: Bool = false
     var errorMessage: String?
-    
-    private let localDataKey = "saved_user_progress"
     
     // Computed properties — UNCHANGED
     var dailyProgress: UserProgress? {
@@ -26,13 +22,20 @@ class ProgressStore {
     
     static let shared = ProgressStore()
     private var client: SupabaseClient { SupabaseManager.shared.client }
+    
+    // Cache key is user-scoped to prevent data leaking between accounts
+    private func localDataKey(for userId: UUID) -> String { "saved_user_progress_\(userId.uuidString)" }
+    
     init() {
-        loadFromLocal()
+        // Do NOT load from local on init — loaded after we know the current user
     }
     
     // MARK: - Fetch from Supabase
     func fetchProgress(userId: UUID) async {
         isLoading = true
+        // Clear stale data from previous user before loading
+        progressRecords = []
+        loadFromLocal(for: userId)
         do {
             let fetched: [UserProgress] = try await client
                 .from("user_progress")
@@ -41,6 +44,7 @@ class ProgressStore {
                 .execute()
                 .value
             progressRecords = fetched
+            saveToLocal(for: userId)
         } catch {
             errorMessage = error.localizedDescription
             print("Fallback: Using locally cached progress")
@@ -140,21 +144,22 @@ class ProgressStore {
     // MARK: - Clear (called on sign-out)
     func clearData() {
         progressRecords = []
-        UserDefaults.standard.removeObject(forKey: localDataKey)
+        // Do NOT remove UserDefaults — user-scoped keys mean data is isolated per user.
+        // Data will be available again when the same user logs back in.
     }
     
     // MARK: - Local Persistence
-    private func saveToLocal() {
+    private func saveToLocal(for userId: UUID) {
         do {
             let data = try JSONEncoder().encode(progressRecords)
-            UserDefaults.standard.set(data, forKey: localDataKey)
+            UserDefaults.standard.set(data, forKey: localDataKey(for: userId))
         } catch {
             print("Failed to save progress to local storage: \(error)")
         }
     }
 
-    private func loadFromLocal() {
-        guard let data = UserDefaults.standard.data(forKey: localDataKey) else { return }
+    private func loadFromLocal(for userId: UUID) {
+        guard let data = UserDefaults.standard.data(forKey: localDataKey(for: userId)) else { return }
         do {
             let records = try JSONDecoder().decode([UserProgress].self, from: data)
             self.progressRecords = records

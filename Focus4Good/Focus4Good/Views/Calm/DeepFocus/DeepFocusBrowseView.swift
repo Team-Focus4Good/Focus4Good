@@ -75,15 +75,26 @@ struct DeepFocusBrowseView: View {
         }
         .background(AppTheme.appGradient.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { loadFavourite() }
-        .onDisappear { stopTimer() }
+        .onAppear {
+            loadFavourite()
+            startSession()
+        }
+        .onDisappear {
+            stopTimer()
+        }
+        .onChange(of: volume) { _, newVol in
+            ASMRAudioService.shared.setVolume(isMuted ? 0 : Float(newVol))
+        }
+        .onChange(of: isMuted) { _, muted in
+            ASMRAudioService.shared.setVolume(muted ? 0 : Float(volume))
+        }
     }
 
     // MARK: - Subviews
 
     private var titleRow: some View {
         HStack {
-            Text("Guided Meditation")
+            Text("Deep Focus")
                 .font(.title2)
                 .fontWeight(.bold)
                 .lineLimit(1)
@@ -99,14 +110,24 @@ struct DeepFocusBrowseView: View {
         }
     }
 
+    private var maxDuration: Double {
+        let audioDuration = ASMRAudioService.shared.duration
+        return audioDuration > 0 ? audioDuration : Double(totalSessionSeconds)
+    }
+
     private var progressSection: some View {
         VStack(spacing: 6) {
             Slider(
-                value: Binding(get: { elapsed }, set: { _ in }),
-                in: 0...Double(totalSessionSeconds)
+                value: Binding(
+                    get: { elapsed },
+                    set: { newTime in
+                        elapsed = newTime
+                        ASMRAudioService.shared.seek(to: newTime)
+                    }
+                ),
+                in: 0...maxDuration
             )
-            .tint(Color(.systemGray))
-            .disabled(true)
+            .tint(Color.accentColor)
 
             HStack {
                 Text(formatTime(elapsed))
@@ -116,7 +137,7 @@ struct DeepFocusBrowseView: View {
 
                 Spacer()
 
-                Text("-\(formatTime(remaining))")
+                Text("-\(formatTime(max(0, maxDuration - elapsed)))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -191,7 +212,7 @@ struct DeepFocusBrowseView: View {
                     .font(.title2)
                     .fontWeight(.bold)
 
-                Text("You completed a 5-minute\nGuided Meditation session")
+                Text("You completed a 5-minute\nDeep Focus session")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -249,31 +270,44 @@ struct DeepFocusBrowseView: View {
         elapsed = 0
         hasStarted = true
         isPlaying = true
+        ASMRAudioService.shared.play(soundName: "creating-mental-space")
+        ASMRAudioService.shared.setVolume(isMuted ? 0 : Float(volume))
         startTimer()
     }
 
     private func pauseSession() {
         isPlaying = false
+        ASMRAudioService.shared.pause()
         stopTimer()
     }
 
     private func resumeSession() {
         isPlaying = true
+        ASMRAudioService.shared.resume()
         startTimer()
     }
 
     private func resetSession() {
         stopTimer()
         elapsed = 0
-        hasStarted = false
-        isPlaying = false
+        hasStarted = true
+        isPlaying = true
+        ASMRAudioService.shared.play(soundName: "creating-mental-space")
+        startTimer()
     }
 
     private func startTimer() {
         stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            elapsed += 1
-            if Int(elapsed) >= totalSessionSeconds { completeSession() }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+            if isPlaying {
+                let cur = ASMRAudioService.shared.currentTime
+                if cur > 0 {
+                    elapsed = cur
+                } else {
+                    elapsed += 0.25
+                }
+                if elapsed >= maxDuration { completeSession() }
+            }
         }
     }
 
@@ -286,6 +320,7 @@ struct DeepFocusBrowseView: View {
         stopTimer()
         isPlaying = false
         hasStarted = false
+        ASMRAudioService.shared.stop()
 
         Task {
             await store.logGuidedMeditationSession(

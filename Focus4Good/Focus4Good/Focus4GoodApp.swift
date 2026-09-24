@@ -45,12 +45,17 @@ struct Focus4GoodApp: App {
 
                 case .onboarding:
                     OnboardingView(onComplete: {
-                        appState = .app
+                        if userStore.isAuthenticated {
+                            appState = .app
+                        } else {
+                            appState = .auth
+                        }
                     })
 
                 case .auth:
-                    // Auth is bypassed for now — go straight to app
-                    MainTabView()
+                    AuthView(onSuccess: {
+                        appState = .app
+                    })
 
                 case .app:
                     MainTabView()
@@ -65,6 +70,11 @@ struct Focus4GoodApp: App {
             .onAppear {
                 // Request notification permission on first launch
                 Task { _ = await NotificationManager.shared.requestPermission() }
+            }
+            .onChange(of: userStore.isAuthenticated) { _, isAuth in
+                if !isAuth && appState == .app {
+                    appState = .auth
+                }
             }
             .preferredColorScheme(.light) // Force light mode
         }
@@ -96,11 +106,15 @@ struct Focus4GoodApp: App {
     // MARK: - Helpers
 
     private func handleSplashFinished() {
-        // Auth is bypassed — skip session check
-        if !hasSeenOnboarding {
-            appState = .onboarding
-        } else {
-            appState = .app
+        Task {
+            await userStore.checkExistingSession()
+            if !hasSeenOnboarding {
+                appState = .onboarding
+            } else if userStore.isAuthenticated {
+                appState = .app
+            } else {
+                appState = .auth
+            }
         }
     }
 }
@@ -156,7 +170,7 @@ struct MainTabView: View {
             }
             .tint(AppTheme.orange)
             
-            let shouldShowMiniPlayer = audio.currentSoundName != nil && audio.isPlaying
+            let shouldShowMiniPlayer = audio.currentSoundName != nil && audio.isPlaying && !audio.isDeepFocusSound
             
             if shouldShowMiniPlayer {
                 ASMRMiniPlayerView()
