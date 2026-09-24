@@ -108,7 +108,7 @@ struct UserFavouriteAsmrSound: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var userId: UUID
     var soundId: UUID
-    var savedAt: Date
+    var savedAt: String
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -152,6 +152,41 @@ struct BrainDumpEntry: Identifiable, Codable, Hashable {
         case drawingData = "drawing_data"
         case pointsEarned = "points_earned"
         case createdAt = "created_at"
+    }
+
+    init(id: UUID = UUID(), userId: UUID, folderId: UUID? = nil, title: String? = nil, content: String, drawingData: Data? = nil, pointsEarned: Int = 10, createdAt: Date = Date()) {
+        self.id = id
+        self.userId = userId
+        self.folderId = folderId
+        self.title = title
+        self.content = content
+        self.drawingData = drawingData
+        self.pointsEarned = pointsEarned
+        self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        userId = try c.decode(UUID.self, forKey: .userId)
+        folderId = try c.decodeIfPresent(UUID.self, forKey: .folderId)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        content = try c.decode(String.self, forKey: .content)
+        drawingData = try c.decodeIfPresent(Data.self, forKey: .drawingData)
+        pointsEarned = try c.decodeIfPresent(Int.self, forKey: .pointsEarned) ?? 10
+        createdAt = SupabaseDateCoding.flexDecode(from: c, key: .createdAt) ?? Date()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(userId, forKey: .userId)
+        try c.encodeIfPresent(folderId, forKey: .folderId)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encode(content, forKey: .content)
+        try c.encodeIfPresent(drawingData, forKey: .drawingData)
+        try c.encode(pointsEarned, forKey: .pointsEarned)
+        try c.encode(SupabaseDateCoding.encodeTimestamp(createdAt), forKey: .createdAt)
     }
 }
 

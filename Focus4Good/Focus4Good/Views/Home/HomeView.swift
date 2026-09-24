@@ -244,8 +244,6 @@ struct HomeView: View {
             .shadow(color: AppTheme.orange.opacity(0.12), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(HomeCardButtonStyle())
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 16)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -258,8 +256,6 @@ struct HomeView: View {
             focusPointsCard(height: height)
             todaysGoalCard(height: height)
         }
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 16)
     }
 
     // MARK: Focus Points
@@ -414,8 +410,6 @@ struct HomeView: View {
                 .shadow(color: AppTheme.orange.opacity(0.14), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(HomeCardButtonStyle())
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 16)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -522,8 +516,6 @@ struct HomeView: View {
             }
         }
         .buttonStyle(HomeCardButtonStyle())
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 16)
     }
 }
 

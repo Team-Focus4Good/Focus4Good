@@ -50,7 +50,43 @@ class CalmCentreStore {
     }
 
     static let shared = CalmCentreStore()
-    private init() {}
+    
+    private let foldersCacheKey = "cached_braindump_folders"
+    private let entriesCacheKey = "cached_braindump_entries"
+    private let asmrFavsCacheKey = "cached_asmr_favourite_ids"
+
+    private init() {
+        loadLocalData()
+    }
+
+    // MARK: - Local Persistence
+    private func loadLocalData() {
+        if let data = UserDefaults.standard.data(forKey: foldersCacheKey),
+           let cached = try? JSONDecoder().decode([BrainDumpFolder].self, from: data) {
+            self.brainDumpFolders = cached
+        }
+        if let data = UserDefaults.standard.data(forKey: entriesCacheKey),
+           let cached = try? JSONDecoder().decode([BrainDumpEntry].self, from: data) {
+            self.brainDumpEntries = cached
+        }
+        if let data = UserDefaults.standard.data(forKey: asmrFavsCacheKey),
+           let cached = try? JSONDecoder().decode([String].self, from: data) {
+            self.favouriteAsmrSoundIds = Set(cached.compactMap { UUID(uuidString: $0) })
+        }
+    }
+
+    private func saveLocalData() {
+        if let data = try? JSONEncoder().encode(brainDumpFolders) {
+            UserDefaults.standard.set(data, forKey: foldersCacheKey)
+        }
+        if let data = try? JSONEncoder().encode(brainDumpEntries) {
+            UserDefaults.standard.set(data, forKey: entriesCacheKey)
+        }
+        let favStrings = favouriteAsmrSoundIds.map { $0.uuidString }
+        if let data = try? JSONEncoder().encode(favStrings) {
+            UserDefaults.standard.set(data, forKey: asmrFavsCacheKey)
+        }
+    }
 
     // MARK: - Fetch
 
@@ -128,7 +164,9 @@ class CalmCentreStore {
                 .eq("user_id", value: userId.uuidString)
                 .execute()
                 .value
-            favouriteAsmrSoundIds = Set(fetched.map { $0.soundId })
+            let fetchedIds = Set(fetched.map { $0.soundId })
+            favouriteAsmrSoundIds = favouriteAsmrSoundIds.union(fetchedIds)
+            saveLocalData()
         } catch { print("Fetch error: \(error)") }
     }
 
@@ -142,7 +180,13 @@ class CalmCentreStore {
                 .eq("user_id", value: userId.uuidString)
                 .execute()
                 .value
-            brainDumpFolders = fetched
+            var merged = fetched
+            let fetchedIds = Set(fetched.map { $0.id })
+            for local in brainDumpFolders where !fetchedIds.contains(local.id) {
+                merged.append(local)
+            }
+            brainDumpFolders = merged
+            saveLocalData()
         } catch { print("Fetch error: \(error)") }
     }
 
@@ -156,7 +200,13 @@ class CalmCentreStore {
                 .eq("user_id", value: userId.uuidString)
                 .execute()
                 .value
-            brainDumpEntries = fetched
+            var merged = fetched
+            let fetchedIds = Set(fetched.map { $0.id })
+            for local in brainDumpEntries where !fetchedIds.contains(local.id) {
+                merged.append(local)
+            }
+            brainDumpEntries = merged
+            saveLocalData()
         } catch { print("Fetch error: \(error)") }
     }
 
@@ -204,6 +254,7 @@ class CalmCentreStore {
     func toggleAsmrFavourite(soundId: UUID, userId: UUID) {
         if favouriteAsmrSoundIds.contains(soundId) {
             favouriteAsmrSoundIds.remove(soundId)
+            saveLocalData()
             Task {
                 do {
                     try await SupabaseManager.shared.client.from("user_favourite_asmr_sounds")
@@ -215,7 +266,8 @@ class CalmCentreStore {
             }
         } else {
             favouriteAsmrSoundIds.insert(soundId)
-            let fav = UserFavouriteAsmrSound(userId: userId, soundId: soundId, savedAt: Date())
+            saveLocalData()
+            let fav = UserFavouriteAsmrSound(userId: userId, soundId: soundId, savedAt: ISO8601DateFormatter().string(from: Date()))
             Task {
                 do {
                     try await SupabaseManager.shared.client.from("user_favourite_asmr_sounds").insert(fav).execute()
@@ -228,6 +280,7 @@ class CalmCentreStore {
     func addBrainDumpFolder(name: String, userId: UUID) {
         let folder = BrainDumpFolder(userId: userId, name: name, entryCount: 0)
         brainDumpFolders.append(folder)
+        saveLocalData()
         Task {
             do {
                 try await SupabaseManager.shared.client.from("brain_dump_folders").insert(folder).execute()
@@ -238,6 +291,7 @@ class CalmCentreStore {
     func updateBrainDumpFolder(_ folder: BrainDumpFolder) {
         if let index = brainDumpFolders.firstIndex(where: { $0.id == folder.id }) {
             brainDumpFolders[index] = folder
+            saveLocalData()
             Task {
                 do {
                     try await SupabaseManager.shared.client.from("brain_dump_folders")
@@ -263,6 +317,7 @@ class CalmCentreStore {
                 } catch { print("Update error: \(error)") }
             }
         }
+        saveLocalData()
         Task {
             do {
                 try await SupabaseManager.shared.client.from("brain_dump_folders")
@@ -285,6 +340,7 @@ class CalmCentreStore {
                 try await SupabaseManager.shared.client.from("brain_dump_folders").update(folder).eq("id", value: folder.id.uuidString).execute()
             } catch { print("Update error: \(error)") }
         }
+        saveLocalData()
         do {
             try await SupabaseManager.shared.client.from("brain_dump_entries").insert(entry).execute()
         } catch { print("Insert error: \(error)") }
@@ -295,6 +351,7 @@ class CalmCentreStore {
     func updateBrainDumpEntry(_ entry: BrainDumpEntry) {
         if let index = brainDumpEntries.firstIndex(where: { $0.id == entry.id }) {
             brainDumpEntries[index] = entry
+            saveLocalData()
             Task {
                 do {
                     try await SupabaseManager.shared.client.from("brain_dump_entries")
@@ -317,6 +374,7 @@ class CalmCentreStore {
                 } catch { print("Update error: \(error)") }
             }
         }
+        saveLocalData()
         Task {
             do {
                 try await SupabaseManager.shared.client.from("brain_dump_entries")

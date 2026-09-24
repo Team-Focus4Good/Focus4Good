@@ -193,7 +193,7 @@ struct SensorySootheView: View {
             .padding(.horizontal)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
                     ForEach(store.favouriteAsmrSounds) { sound in
                         Button {
                             store.activeAsmrSound = sound
@@ -221,7 +221,7 @@ struct SensorySootheView: View {
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .foregroundStyle(.primary)
-                                    .lineLimit(2)
+                                    .lineLimit(1)
                                     .multilineTextAlignment(.center)
                                     .frame(width: 120)
                             }

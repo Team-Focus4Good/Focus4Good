@@ -39,6 +39,10 @@ class UserStore {
         self.currentUser = user
         self.isAuthenticated = true
         self.isSessionReady = true
+
+        Task {
+            await self.loadUserData(userId: user.id)
+        }
     }
     
     // MARK: - Auth
@@ -244,10 +248,10 @@ class UserStore {
         async let breathing: ()   = CalmCentreStore.shared.fetchBreathingSessions(userId: userId)
         async let jpmr: ()        = CalmCentreStore.shared.fetchJpmrSessions(userId: userId)
         async let meditation: ()  = CalmCentreStore.shared.fetchGuidedMeditationSessions(userId: userId)
-        async let asmr: ()        = CalmCentreStore.shared.fetchAsmrSounds()
+        async let asmrFavs: ()    = CalmCentreStore.shared.fetchFavouriteAsmrSounds(userId: userId)
         async let folders: ()     = CalmCentreStore.shared.fetchBrainDumpFolders(userId: userId)
         async let entries: ()     = CalmCentreStore.shared.fetchBrainDumpEntries(userId: userId)
-        _ = await (progress, communities, categories, ngos, events, regs, breathing, jpmr, meditation, asmr, folders, entries)
+        _ = await (progress, communities, categories, ngos, events, regs, breathing, jpmr, meditation, asmrFavs, folders, entries)
         
         // Ensure default community and posts exist
         await CommunityStore.shared.seedSondharaCommunityIfNeeded(userId: userId)
