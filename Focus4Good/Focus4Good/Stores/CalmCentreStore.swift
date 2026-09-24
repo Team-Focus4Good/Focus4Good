@@ -22,7 +22,18 @@ class CalmCentreStore {
     var errorMessage: String?
 
     // MARK: - Computed
-    var favouriteAsmrSounds: [AsmrSound] { asmrSounds.filter { favouriteAsmrSoundIds.contains($0.id) } }
+    var favouriteAsmrSounds: [AsmrSound] {
+        let allSounds = ASMRData.playlists.flatMap { $0.sounds }
+        var uniqueSounds: [AsmrSound] = []
+        var seenIds: Set<UUID> = []
+        for sound in allSounds {
+            if favouriteAsmrSoundIds.contains(sound.id) && !seenIds.contains(sound.id) {
+                uniqueSounds.append(sound)
+                seenIds.insert(sound.id)
+            }
+        }
+        return uniqueSounds
+    }
     var asmrSoundsByCategory: [String: [AsmrSound]] { Dictionary(grouping: asmrSounds, by: { $0.category }) }
     var recentBrainDumpEntries: [BrainDumpEntry] { brainDumpEntries.sorted { $0.createdAt > $1.createdAt } }
 

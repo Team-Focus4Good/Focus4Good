@@ -69,13 +69,38 @@ struct GuidedMeditationSession: Codable {
 
 //AsmrSound
 struct AsmrSound: Identifiable, Codable, Hashable {
-    var id: UUID = UUID()
+    var id: UUID
     var name: String
     var description: String
     var category: String
     var audioUrl: String
     var imageUrl: String
     var durationSeconds: Int
+
+    init(name: String, description: String, category: String, audioUrl: String, imageUrl: String, durationSeconds: Int) {
+        self.id = AsmrSound.stableId(for: name)
+        self.name = name
+        self.description = description
+        self.category = category
+        self.audioUrl = audioUrl
+        self.imageUrl = imageUrl
+        self.durationSeconds = durationSeconds
+    }
+
+    /// Produces the same UUID for the same name on every launch.
+    private static func stableId(for name: String) -> UUID {
+        var bytes = [UInt8](repeating: 0, count: 16)
+        for (i, byte) in name.utf8.enumerated() {
+            bytes[i % 16] = bytes[i % 16] &+ byte
+        }
+        // Mark as UUID v5 (name-based) for spec correctness
+        bytes[6] = (bytes[6] & 0x0F) | 0x50
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        return UUID(uuid: (bytes[0],  bytes[1],  bytes[2],  bytes[3],
+                           bytes[4],  bytes[5],  bytes[6],  bytes[7],
+                           bytes[8],  bytes[9],  bytes[10], bytes[11],
+                           bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
 }
 
 //UserFavouriteAsmrSound

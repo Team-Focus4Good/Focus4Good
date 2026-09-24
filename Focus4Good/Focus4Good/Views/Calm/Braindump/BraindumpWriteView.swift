@@ -46,7 +46,7 @@ struct BraindumpWriteView: View {
             TextField("", text: $entryTitle)
             Button("Save") { performSave() }
                 .tint(.primary)
-            Button("Skip", role: .cancel) { performSave() }
+            Button("Skip", role: .cancel) { showSavedPopup = true }
                 .tint(.primary)
         }
         .toolbar(selectedMode == .draw ? .hidden : .visible, for: .tabBar)

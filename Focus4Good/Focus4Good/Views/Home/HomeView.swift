@@ -61,14 +61,19 @@ struct HomeView: View {
                 let plannerH = remainingH * 0.52
                 let statsH   = remainingH * 0.44
 
-                VStack(spacing: spacing) {
-                    plannerCard(height: plannerH, width: cardW)
-                    statsRow(height: statsH)
-                    rescueMeCard(height: rescueH, width: cardW)
+                let ngoH = remainingH * 0.62
+
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: spacing) {
+                        plannerCard(height: plannerH, width: cardW)
+                        statsRow(height: statsH)
+                        rescueMeCard(height: rescueH, width: cardW)
+                        ngoConnectCard(height: ngoH, width: cardW)
+                    }
+                    .padding(.horizontal, hPad)
+                    .padding(.top, topPad)
+                    .padding(.bottom, bottomPad)
                 }
-                .padding(.horizontal, hPad)
-                .padding(.top, topPad)
-                .padding(.bottom, bottomPad)
             }
             .background(homeBackground)
             .navigationTitle("Home")
@@ -407,6 +412,114 @@ struct HomeView: View {
                 .frame(width: width, height: height)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .shadow(color: AppTheme.orange.opacity(0.14), radius: 14, x: 0, y: 6)
+        }
+        .buttonStyle(HomeCardButtonStyle())
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MARK: - NGO Connect Card
+    // ─────────────────────────────────────────────────────────────────
+
+    @ViewBuilder
+    private func ngoConnectCard(height: CGFloat, width: CGFloat) -> some View {
+        Button {
+            navigationPath.append(HomeDestination.ngoList)
+        } label: {
+            ZStack(alignment: .bottom) {
+                // Full-bleed hero image
+                Image("ngo")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: height)
+                    .clipped()
+
+                // Dark gradient overlay for text readability
+                LinearGradient(
+                    colors: [
+                        .clear,
+                        Color.black.opacity(0.15),
+                        Color.black.opacity(0.65),
+                        Color.black.opacity(0.82)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                // Content overlay
+                VStack(alignment: .leading, spacing: 10) {
+                    Spacer()
+
+                    // Title & subtitle
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NGO Connect")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+
+                        Text("Every focus point you earn helps fund a child's education")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .lineLimit(2)
+                    }
+
+                    // Progress bar
+                    VStack(spacing: 6) {
+                        GeometryReader { geo in
+                            let progressWidth = geo.size.width * CGFloat(min(Double(focusPoints) / 10000.0, 1.0))
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(.white.opacity(0.2))
+                                    .frame(height: 5)
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [AppTheme.orange, AppTheme.amber],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .frame(width: max(5, progressWidth), height: 5)
+                                    .shadow(color: AppTheme.orange.opacity(0.5), radius: 4, y: 0)
+                            }
+                        }
+                        .frame(height: 5)
+
+                        HStack {
+                            Text("\(focusPoints) / 10,000 points")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.6))
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Text("Learn More")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundStyle(AppTheme.orange)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .frame(width: width, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 6)
+            // Points badge pinned to top-right corner
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 5) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("\(focusPoints) pts")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.black.opacity(0.4))
+                .clipShape(Capsule())
+                .padding(16)
+            }
         }
         .buttonStyle(HomeCardButtonStyle())
         .opacity(appeared ? 1 : 0)

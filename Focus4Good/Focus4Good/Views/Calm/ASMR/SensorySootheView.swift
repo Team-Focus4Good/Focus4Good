@@ -3,6 +3,7 @@ import SwiftUI
 struct SensorySootheView: View {
 
     @Environment(CalmCentreStore.self) private var store
+    @Environment(UserStore.self) private var userStore
 
     @State private var selectedSound: AsmrSound?
     
@@ -20,12 +21,17 @@ struct SensorySootheView: View {
                 // 1. Top Section: 5 Playlists (Horizontally Scrollable)
                 playlistsSection
                 
-                // 2. Middle Section: Recent Playlist
+                // 2. Favourites Section
+                if !store.favouriteAsmrSounds.isEmpty {
+                    favouriteSoundsSection
+                }
+                
+                // 3. Middle Section: Recent Playlist
                 if recentPlaylist != nil {
                     recentPlaylistSection
                 }
                 
-                // 3. Bottom Section: Recently Played ASMR Sounds
+                // 4. Bottom Section: Recently Played ASMR Sounds
                 if !recentSounds.isEmpty {
                     recentlyPlayedSoundsSection
                 }
@@ -38,6 +44,9 @@ struct SensorySootheView: View {
         .navigationBarTitleDisplayMode(.large)
         .onAppear { 
             loadRecents()
+            if let userId = userStore.currentUser?.id {
+                Task { await store.fetchFavouriteAsmrSounds(userId: userId) }
+            }
         }
     }
 
@@ -172,6 +181,59 @@ struct SensorySootheView: View {
         }
     }
 
+    private var favouriteSoundsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "heart.fill")
+                    .foregroundStyle(Color.accentColor)
+                Text("Your Favourites")
+                    .font(.title2)
+                    .fontWeight(.bold)
+            }
+            .padding(.horizontal)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(store.favouriteAsmrSounds) { sound in
+                        Button {
+                            store.activeAsmrSound = sound
+                            store.showGlobalASMRPlayer = true
+                        } label: {
+                            VStack(spacing: 8) {
+                                if !sound.imageUrl.isEmpty {
+                                    Image(sound.imageUrl)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 120, height: 120)
+                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                } else {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color(.systemGray5))
+                                        .frame(width: 120, height: 120)
+                                        .overlay(
+                                            Image(systemName: "waveform")
+                                                .font(.title2)
+                                                .foregroundStyle(.secondary)
+                                        )
+                                }
+
+                                Text(sound.name)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                    .frame(width: 120)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
     private var recentlyPlayedSoundsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recently Played Sounds")
@@ -242,5 +304,6 @@ struct SensorySootheView: View {
     NavigationStack {
         SensorySootheView()
             .environment(CalmCentreStore.shared)
+            .environment(UserStore())
     }
 }
