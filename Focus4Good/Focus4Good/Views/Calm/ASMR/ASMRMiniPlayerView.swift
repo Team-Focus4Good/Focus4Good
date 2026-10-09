@@ -5,7 +5,7 @@ struct ASMRMiniPlayerView: View {
     var audio = ASMRAudioService.shared
     
     var body: some View {
-        if let soundName = audio.currentSoundName, !store.isASMRPlayerPresented, !audio.isDeepFocusSound {
+        if let soundName = audio.currentSoundName, !store.isASMRPlayerPresented {
             Button {
                 store.showGlobalASMRPlayer = true
             } label: {

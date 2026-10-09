@@ -16,7 +16,6 @@ struct UserTask: Identifiable, Hashable {
     var scheduledTime: Date?
     var repeatType: RepeatType
     var priority: Priority
-    var difficulty: Difficulty
     var isCompleted: Bool
     var estimatedDuration: Int?
     var createdAt: Date
@@ -31,7 +30,6 @@ struct UserTask: Identifiable, Hashable {
         case scheduledTime = "scheduled_time"
         case repeatType = "repeat_type"
         case priority
-        case difficulty
         case isCompleted = "is_completed"
         case estimatedDuration = "estimated_duration"
         case createdAt = "created_at"
@@ -49,10 +47,6 @@ struct UserTask: Identifiable, Hashable {
         case none, low, medium, high
     }
     
-    enum Difficulty: String, Codable, CaseIterable {
-        case none, easy, medium, hard
-    }
-    
     // MARK: - Regular init (for creating tasks locally)
     init(
         id: UUID = UUID(),
@@ -64,7 +58,6 @@ struct UserTask: Identifiable, Hashable {
         scheduledTime: Date? = nil,
         repeatType: RepeatType,
         priority: Priority,
-        difficulty: Difficulty = .none,
         isCompleted: Bool,
         estimatedDuration: Int? = nil,
         createdAt: Date = Date()
@@ -78,7 +71,6 @@ struct UserTask: Identifiable, Hashable {
         self.scheduledTime = scheduledTime
         self.repeatType = repeatType
         self.priority = priority
-        self.difficulty = difficulty
         self.isCompleted = isCompleted
         self.estimatedDuration = estimatedDuration
         self.createdAt = createdAt
@@ -97,7 +89,6 @@ extension UserTask: Codable {
         title        = try c.decode(String.self, forKey: .title)
         repeatType   = try c.decode(RepeatType.self, forKey: .repeatType)
         priority     = try c.decode(Priority.self, forKey: .priority)
-        difficulty   = try c.decodeIfPresent(Difficulty.self, forKey: .difficulty) ?? .none
         isCompleted  = try c.decode(Bool.self, forKey: .isCompleted)
         estimatedDuration = try c.decodeIfPresent(Int.self, forKey: .estimatedDuration)
 
@@ -118,7 +109,6 @@ extension UserTask: Codable {
         try c.encode(title, forKey: .title)
         try c.encode(repeatType, forKey: .repeatType)
         try c.encode(priority, forKey: .priority)
-        try c.encode(difficulty, forKey: .difficulty)
         try c.encode(isCompleted, forKey: .isCompleted)
         try c.encodeIfPresent(estimatedDuration, forKey: .estimatedDuration)
 

@@ -10,10 +10,6 @@ struct ForgotPasswordView: View {
     @Environment(UserStore.self) private var userStore
     @Environment(\.dismiss) private var dismiss
     
-    /// Bound to AuthView so it can suppress the auth-state-change navigation
-    /// while we're in the middle of the password-reset flow.
-    @Binding var isInPasswordReset: Bool
-    
     @State private var step: ForgotPasswordStep = .email
     @State private var email: String = ""
     @State private var code: String = ""
@@ -205,24 +201,6 @@ struct ForgotPasswordView: View {
     }
     
     // MARK: - Actions
-    private func humanizedError(_ error: Error) -> String {
-        let msg = error.localizedDescription.lowercased()
-        if msg.contains("rate limit") || msg.contains("too many") {
-            return "Too many attempts. Please wait a few minutes before trying again."
-        } else if msg.contains("error sending recovery") || msg.contains("sending recovery email") {
-            return "Could not send reset email. Please check your email address and try again in a few minutes."
-        } else if msg.contains("invalid") && msg.contains("email") {
-            return "Please enter a valid email address."
-        } else if msg.contains("not found") || msg.contains("user not found") {
-            return "No account found with that email address."
-        } else if msg.contains("redirect") || msg.contains("redirect_to") {
-            return "Configuration error. Please contact support."
-        } else if msg.contains("network") || msg.contains("connection") || msg.contains("offline") {
-            return "Network error. Please check your connection and try again."
-        }
-        return error.localizedDescription
-    }
-    
     private func sendResetCode() async {
         isLoading = true
         errorMessage = nil
@@ -232,7 +210,7 @@ struct ForgotPasswordView: View {
             successMessage = "Code sent successfully!"
             step = .otp
         } catch {
-            errorMessage = humanizedError(error)
+            errorMessage = error.localizedDescription
         }
         isLoading = false
     }
@@ -243,13 +221,10 @@ struct ForgotPasswordView: View {
         successMessage = nil
         do {
             try await userStore.verifyPasswordResetOTP(email: email, code: code)
-            // OTP verified — Supabase now signs in with a recovery session.
-            // Keep isInPasswordReset = true so AuthView doesn't navigate away.
-            isInPasswordReset = true
             successMessage = "Code verified. Please set your new password."
             step = .newPassword
         } catch {
-            errorMessage = humanizedError(error)
+            errorMessage = error.localizedDescription
         }
         isLoading = false
     }
@@ -260,15 +235,12 @@ struct ForgotPasswordView: View {
         successMessage = nil
         do {
             try await userStore.updateUserPassword(newPassword: newPassword)
-            successMessage = "Password updated! Please sign in with your new password."
-            // Wait briefly so user can read the message, then clean up
+            successMessage = "Password updated successfully!"
+            // Wait for 1.5 seconds then dismiss
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            // Sign out the recovery session so the user must log in fresh
-            userStore.signOut()
-            isInPasswordReset = false
             dismiss()
         } catch {
-            errorMessage = humanizedError(error)
+            errorMessage = error.localizedDescription
         }
         isLoading = false
     }

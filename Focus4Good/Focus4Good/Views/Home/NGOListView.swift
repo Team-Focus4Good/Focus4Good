@@ -7,7 +7,7 @@ struct NGOListView: View {
     @Environment(UserStore.self) private var userStore
     
     private var ngo: NGO? {
-        volunteerStore.ngos.first ?? VolunteerStore.dummyNGOs.first
+        volunteerStore.ngos.first
     }
     
     private var currentLevel: Int {
@@ -54,8 +54,7 @@ struct NGOConnectDetailView: View {
     @State private var showingDonation = false
     
     private var events: [VolunteerEvent] {
-        let fetched = volunteerStore.events(for: ngo)
-        return fetched.isEmpty ? VolunteerStore.dummyEvents(for: ngo.id) : fetched
+        volunteerStore.events(for: ngo)
     }
     
     var body: some View {
@@ -177,7 +176,11 @@ struct NGOConnectDetailView: View {
                             .clipShape(Capsule())
                         }
                     }
-
+                    
+                    // Level 2: Gallery
+                    LevelLockedSection(title: "Highlights", requiredLevel: 2, currentLevel: currentLevel, lockedIcon: "photo.on.rectangle.angled", description: "View the gallery of past events and impact.") {
+                        NGOGalleryView(images: ngo.galleryImages ?? ["ngo"])
+                    }
                     
                     // Level 3: Volunteer
                     LevelLockedSection(title: "Volunteer & Visit", requiredLevel: 3, currentLevel: currentLevel, lockedIcon: "hand.raised.fill", description: "Join our next event and make a direct impact.") {

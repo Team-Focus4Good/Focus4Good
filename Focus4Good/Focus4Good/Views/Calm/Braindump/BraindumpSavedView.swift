@@ -36,6 +36,7 @@ struct BraindumpSavedView: View {
             .padding(.horizontal)
             .padding(.top, 24)
         }
+        .background(Color.white.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

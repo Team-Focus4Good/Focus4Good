@@ -3,13 +3,15 @@ import SwiftUI
 struct SensorySootheView: View {
 
     @Environment(CalmCentreStore.self) private var store
-    @Environment(UserStore.self) private var userStore
 
     @State private var selectedSound: AsmrSound?
     
     // New State for Recents
     @State private var recentPlaylist: ASMRPlaylist?
     @State private var recentSounds: [AsmrSound] = []
+
+    private static let recentPlaylistKey = "recent_asmr_playlist_id"
+    private static let recentSoundsKey = "recent_asmr_sounds"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -18,17 +20,12 @@ struct SensorySootheView: View {
                 // 1. Top Section: 5 Playlists (Horizontally Scrollable)
                 playlistsSection
                 
-                // 2. Favourites Section
-                if !store.favouriteAsmrSounds.isEmpty {
-                    favouriteSoundsSection
-                }
-                
-                // 3. Middle Section: Recent Playlist
+                // 2. Middle Section: Recent Playlist
                 if recentPlaylist != nil {
                     recentPlaylistSection
                 }
                 
-                // 4. Bottom Section: Recently Played ASMR Sounds
+                // 3. Bottom Section: Recently Played ASMR Sounds
                 if !recentSounds.isEmpty {
                     recentlyPlayedSoundsSection
                 }
@@ -36,38 +33,27 @@ struct SensorySootheView: View {
             .padding(.top, 16)
             .padding(.bottom, 40)
         }
-        .background(AppTheme.appGradient.ignoresSafeArea())
+        .background(Color.white.ignoresSafeArea())
         .navigationTitle("ASMR Sounds")
         .navigationBarTitleDisplayMode(.large)
         .onAppear { 
             loadRecents()
-            if let userId = userStore.currentUser?.id {
-                Task { await store.fetchFavouriteAsmrSounds(userId: userId) }
-            }
         }
     }
 
     // MARK: - Data Loading
     
     private func loadRecents() {
-        let userId = userStore.currentUser?.id.uuidString ?? "guest"
-        let playlistKey = "recent_asmr_playlist_id_\(userId)"
-        let soundsKey = "recent_asmr_sounds_\(userId)"
-        
         // Load recent playlist
-        if let savedIdString = UserDefaults.standard.string(forKey: playlistKey),
+        if let savedIdString = UserDefaults.standard.string(forKey: Self.recentPlaylistKey),
            let savedId = UUID(uuidString: savedIdString) {
             recentPlaylist = ASMRData.playlists.first(where: { $0.id == savedId })
-        } else {
-            recentPlaylist = nil
         }
         
         // Load recent sounds
-        if let data = UserDefaults.standard.data(forKey: soundsKey),
+        if let data = UserDefaults.standard.data(forKey: Self.recentSoundsKey),
            let saved = try? JSONDecoder().decode([AsmrSound].self, from: data) {
             recentSounds = saved
-        } else {
-            recentSounds = []
         }
     }
 
@@ -186,59 +172,6 @@ struct SensorySootheView: View {
         }
     }
 
-    private var favouriteSoundsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "heart.fill")
-                    .foregroundStyle(Color.accentColor)
-                Text("Your Favourites")
-                    .font(.title2)
-                    .fontWeight(.bold)
-            }
-            .padding(.horizontal)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 14) {
-                    ForEach(store.favouriteAsmrSounds) { sound in
-                        Button {
-                            store.activeAsmrSound = sound
-                            store.showGlobalASMRPlayer = true
-                        } label: {
-                            VStack(spacing: 8) {
-                                if !sound.imageUrl.isEmpty {
-                                    Image(sound.imageUrl)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 120, height: 120)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                } else {
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color(.systemGray5))
-                                        .frame(width: 120, height: 120)
-                                        .overlay(
-                                            Image(systemName: "waveform")
-                                                .font(.title2)
-                                                .foregroundStyle(.secondary)
-                                        )
-                                }
-
-                                Text(sound.name)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                    .multilineTextAlignment(.center)
-                                    .frame(width: 120)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal)
-            }
-        }
-    }
-
     private var recentlyPlayedSoundsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recently Played Sounds")
@@ -309,6 +242,5 @@ struct SensorySootheView: View {
     NavigationStack {
         SensorySootheView()
             .environment(CalmCentreStore.shared)
-            .environment(UserStore())
     }
 }

@@ -11,8 +11,6 @@ struct ProfileView: View {
     @State private var showEditProfile = false
     @State private var showNotificationsAlert = false
     @State private var showTimezoneAlert = false
-    @State private var notificationPermissionMessage = ""
-    @State private var currentTimezoneString = ""
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var profileImage: UIImage? = nil
     @State private var showBadges = false
@@ -144,55 +142,16 @@ struct ProfileView: View {
                     // App Settings Section
                     Section {
                         settingsRow(icon: "bell.badge.fill", label: "Notifications", color: AppTheme.rose) {
-                            Task {
-                                let status = await NotificationManager.shared.checkPermissionStatus()
-                                switch status {
-                                case .authorized, .provisional:
-                                    notificationPermissionMessage = "Notifications are enabled for task reminders and focus alerts."
-                                case .denied:
-                                    notificationPermissionMessage = "Notifications are currently turned off. You can enable them in iOS Settings."
-                                case .notDetermined:
-                                    let granted = await NotificationManager.shared.requestPermission()
-                                    notificationPermissionMessage = granted 
-                                        ? "Notifications enabled successfully!" 
-                                        : "Notifications were not enabled."
-                                @unknown default:
-                                    notificationPermissionMessage = "Manage notification preferences in iOS Settings."
-                                }
-                                showNotificationsAlert = true
-                            }
+                            showNotificationsAlert = true
                         }
                         settingsRow(icon: "globe.americas.fill", label: "Timezone", color: AppTheme.sky) {
-                            let name = TimeZone.current.localizedName(for: .generic, locale: .current) ?? TimeZone.current.identifier
-                            currentTimezoneString = "\(name) (\(TimeZone.current.identifier))"
                             showTimezoneAlert = true
                         }
+                        // App Settings Section continues
                     } header: { Text("App Settings").foregroundStyle(AppTheme.warmTextPrimary).textCase(nil) }
                     .listRowBackground(AppTheme.cardBg)
 
-                    // Account Actions
-                    Section {
-                        Button(role: .destructive) {
-                            showSignOutAlert = true
-                        } label: {
-                            HStack(spacing: 14) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(Color.red.opacity(0.12))
-                                        .frame(width: 32, height: 32)
-                                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(.red)
-                                }
-                                Text("Sign Out")
-                                    .font(.body)
-                                    .foregroundStyle(.red)
-                                Spacer()
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                    .listRowBackground(AppTheme.cardBg)
+                    // Sign Out (disabled — auth is bypassed)
                 }
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
@@ -253,31 +212,13 @@ struct ProfileView: View {
         } message: {
             Text("Dimension is not correct or format is not supported. Please select a different image.")
         }
-        // Sign-out alert
-        .alert("Sign Out", isPresented: $showSignOutAlert) {
-            Button("Sign Out", role: .destructive) {
-                userStore.signOut()
-                dismiss()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Are you sure you want to sign out?")
-        }
+        // Sign-out alert removed — auth is bypassed
         .alert("Notifications", isPresented: $showNotificationsAlert) {
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
             Button("OK", role: .cancel) {}
-        } message: {
-            Text(notificationPermissionMessage)
-        }
+        } message: { Text("Notification settings will be available when backend is connected.") }
         .alert("Timezone", isPresented: $showTimezoneAlert) {
             Button("OK", role: .cancel) {}
-        } message: {
-            Text("Current device timezone: \(currentTimezoneString)")
-        }
+        } message: { Text("Current timezone: New Delhi (IST)") }
         .sheet(isPresented: $showEditProfile) {
             EditProfileView()
         }

@@ -5,7 +5,6 @@ import SwiftUI
 enum HomeDestination: Hashable {
     case schedule
     case ngoList
-    case pomodoro(UserTask)
 }
 
 // MARK: - HomeView
@@ -18,8 +17,6 @@ struct HomeView: View {
     @State private var showProfile = false
     @State private var appeared = false
     @State private var profileImage: UIImage? = nil
-    @State private var showRescueMe = false
-    @State private var rescueTask: UserTask? = nil
 
     private var profileImageKey: String {
         "profileImage_\(userStore.currentUser?.id.uuidString ?? "default")"
@@ -29,7 +26,7 @@ struct HomeView: View {
         let today = Date()
         let todayTasks = taskStore.todaysTasks
         let total = todayTasks.count
-        guard total > 0 else { return 0 }
+        guard total > 0 else { return 0.65 }
         return Double(todayTasks.filter { taskStore.isTaskCompleted($0, on: today) }.count) / Double(total)
     }
 
@@ -48,32 +45,23 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             GeometryReader { geo in
-                let hPad: CGFloat = 20
-                let topPad: CGFloat = 12
-                let bottomPad: CGFloat = 12
-                let spacing: CGFloat = 16
-                let cardW = geo.size.width - hPad * 2
-                let usable = geo.size.height - topPad - bottomPad - spacing * 2
+                let hPad: CGFloat = 18
+                let topPad: CGFloat = 6
+                let spacing: CGFloat = 12
+                let usable = geo.size.height - topPad - spacing * 2
 
-                // Slightly reduce sizes for cards as requested by user
-                let rescueH = cardW * 0.45
-                let remainingH = max(usable - rescueH, 200)
-                let plannerH = remainingH * 0.52
-                let statsH   = remainingH * 0.44
+                // Proportions matched to reference: planner ~35%, stats ~25%, ngo ~35%
+                let plannerH = usable * 0.345
+                let statsH   = usable * 0.265
+                let ngoH     = usable * 0.345
 
-                let ngoH = remainingH * 0.62
-
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: spacing) {
-                        plannerCard(height: plannerH, width: cardW)
-                        statsRow(height: statsH)
-                        rescueMeCard(height: rescueH, width: cardW)
-                        ngoConnectCard(height: ngoH, width: cardW)
-                    }
-                    .padding(.horizontal, hPad)
-                    .padding(.top, topPad)
-                    .padding(.bottom, bottomPad)
+                VStack(spacing: spacing) {
+                    plannerCard(height: plannerH, width: geo.size.width - hPad * 2)
+                    statsRow(height: statsH)
+                    ngoConnectCard(height: ngoH, width: geo.size.width - hPad * 2)
                 }
+                .padding(.horizontal, hPad)
+                .padding(.top, topPad)
             }
             .background(homeBackground)
             .navigationTitle("Home")
@@ -105,15 +93,8 @@ struct HomeView: View {
             }
             .navigationDestination(for: HomeDestination.self) { dest in
                 switch dest {
-                case .schedule:       ScheduleView()
-                case .ngoList:        NGOListView()
-                case .pomodoro(let t): PomodoroView(task: t)
-                }
-            }
-            .sheet(isPresented: $showRescueMe) {
-                RescueMeView { task in
-                    rescueTask = task
-                    navigationPath.append(HomeDestination.pomodoro(task))
+                case .schedule:  ScheduleView()
+                case .ngoList:   NGOListView()
                 }
             }
             .onAppear {
@@ -244,6 +225,8 @@ struct HomeView: View {
             .shadow(color: AppTheme.orange.opacity(0.12), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(HomeCardButtonStyle())
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -256,6 +239,8 @@ struct HomeView: View {
             focusPointsCard(height: height)
             todaysGoalCard(height: height)
         }
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
     }
 
     // MARK: Focus Points
@@ -383,7 +368,7 @@ struct HomeView: View {
 
             Spacer(minLength: 0)
 
-            Text(progress >= 1.0 ? "Completed!" : (progress > 0 ? "On track!" : "Start today!"))
+            Text(progress >= 1.0 ? "Completed!" : "On track!")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(progress >= 1.0 ? AppTheme.sage : AppTheme.warmTextSecondary)
                 .padding(.bottom, 14)
@@ -391,25 +376,6 @@ struct HomeView: View {
         .frame(maxWidth: .infinity)
         .frame(height: height)
         .glassCard(cornerRadius: 18)
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // MARK: - Rescue Me Card
-    // ─────────────────────────────────────────────────────────────────
-
-    @ViewBuilder
-    private func rescueMeCard(height: CGFloat, width: CGFloat) -> some View {
-        Button {
-            showRescueMe = true
-        } label: {
-            Image("rescuemecard")
-                .resizable()
-                .scaledToFill()
-                .frame(width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .shadow(color: AppTheme.orange.opacity(0.14), radius: 14, x: 0, y: 6)
-        }
-        .buttonStyle(HomeCardButtonStyle())
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -426,7 +392,8 @@ struct HomeView: View {
                 Image("ngo")
                     .resizable()
                     .scaledToFill()
-                    .frame(width: width, height: height)
+                    .frame(height: height)
+                    .frame(maxWidth: .infinity)
                     .clipped()
 
                 // Dark gradient overlay for text readability
@@ -496,7 +463,7 @@ struct HomeView: View {
                 }
                 .padding(16)
             }
-            .frame(width: width, height: height)
+            .frame(height: height)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 6)
             // Points badge pinned to top-right corner
@@ -509,13 +476,14 @@ struct HomeView: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.black.opacity(0.4))
-                .clipShape(Capsule())
-                .padding(16)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
+                .padding(12)
             }
         }
         .buttonStyle(HomeCardButtonStyle())
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
     }
 }
 

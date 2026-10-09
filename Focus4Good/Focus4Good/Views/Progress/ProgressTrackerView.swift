@@ -14,7 +14,6 @@ struct ProgressTrackerView: View {
     @Environment(ProgressStore.self)      private var progressStore
     @Environment(UserStore.self)          private var userStore
     @Environment(TaskStore.self)          private var taskStore
-    @Environment(CalmCentreStore.self)    private var calmStore
 
     @State private var selectedPeriod: ProgressPeriod = .weekly
     @State private var activeSheet: ProgressSheetType?
@@ -24,103 +23,6 @@ struct ProgressTrackerView: View {
         case .weekly:  return progressStore.weeklyProgress
         case .monthly: return progressStore.monthlyProgress
         }
-    }
-
-    private var completionDates: Set<String> {
-        var dates = Set<String>()
-        for dateSet in taskStore.taskCompletions.values {
-            dates.formUnion(dateSet)
-        }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-
-        for task in taskStore.tasks where task.isCompleted && task.repeatType == .never {
-            let d = task.scheduledDate ?? task.createdAt
-            dates.insert(formatter.string(from: d))
-        }
-
-        for record in progressStore.progressRecords where record.periodType == "daily" && (record.tasksCompleted > 0 || record.focusTimeMinutes > 0 || record.calmCentreMinutes > 0 || record.focusPointsEarned > 0) {
-            dates.insert(formatter.string(from: record.periodStart))
-        }
-
-        for s in calmStore.breathingSessions {
-            dates.insert(formatter.string(from: s.completedAt))
-        }
-        for s in calmStore.jpmrSessions {
-            dates.insert(formatter.string(from: s.completedAt))
-        }
-        for s in calmStore.guidedMeditationSessions {
-            dates.insert(formatter.string(from: s.completedAt))
-        }
-        return dates
-    }
-
-    private var dailyFocusMinutes: [String: Int] {
-        var dict: [String: Int] = [:]
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        for record in progressStore.progressRecords where record.periodType == "daily" {
-            let key = formatter.string(from: record.periodStart)
-            dict[key] = (dict[key] ?? 0) + record.focusTimeMinutes
-        }
-        return dict
-    }
-
-    private var dailyCalmMinutes: [String: Int] {
-        var dict: [String: Int] = [:]
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        for record in progressStore.progressRecords where record.periodType == "daily" {
-            let key = formatter.string(from: record.periodStart)
-            dict[key] = (dict[key] ?? 0) + record.calmCentreMinutes
-        }
-        for s in calmStore.breathingSessions {
-            let key = formatter.string(from: s.completedAt)
-            dict[key] = (dict[key] ?? 0) + (s.durationSeconds / 60)
-        }
-        for s in calmStore.jpmrSessions {
-            let key = formatter.string(from: s.completedAt)
-            dict[key] = (dict[key] ?? 0) + (s.durationSeconds / 60)
-        }
-        for s in calmStore.guidedMeditationSessions {
-            let key = formatter.string(from: s.completedAt)
-            dict[key] = (dict[key] ?? 0) + (s.durationSeconds / 60)
-        }
-        return dict
-    }
-
-    private var dailyPoints: [String: Int] {
-        var dict: [String: Int] = [:]
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        for record in progressStore.progressRecords where record.periodType == "daily" {
-            let key = formatter.string(from: record.periodStart)
-            dict[key] = (dict[key] ?? 0) + record.focusPointsEarned
-        }
-        return dict
-    }
-
-    private var pointsBreakdown: (focus: Int, task: Int, calm: Int) {
-        let total = userStore.currentUser?.focusPoints ?? 0
-        guard total > 0 else { return (0, 0, 0) }
-
-        let calmPts = calmStore.breathingSessions.count * 15 +
-                      calmStore.jpmrSessions.count * 25 +
-                      calmStore.guidedMeditationSessions.count * 20 +
-                      calmStore.brainDumpEntries.count * 10
-        
-        let completedTaskCount = taskStore.completedTasks.count + taskStore.taskCompletions.values.reduce(0) { $0 + $1.count }
-        let taskPts = completedTaskCount * 10
-
-        let boundedCalm = min(calmPts, total)
-        let boundedTask = min(taskPts, total - boundedCalm)
-        let focusPts = max(0, total - boundedCalm - boundedTask)
-
-        return (focus: focusPts, task: boundedTask, calm: boundedCalm)
     }
 
     // Motivational thoughts for the bottom card
@@ -138,7 +40,7 @@ struct ProgressTrackerView: View {
     // Motivational message based on task progress
     private var motivationalMessage: String {
         let completed = progress?.tasksCompleted ?? 0
-        let goal = progress?.taskGoal ?? (selectedPeriod == .weekly ? 75 : 300)
+        let goal = progress?.taskGoal ?? 1
         let ratio = Double(completed) / Double(max(goal, 1))
         if ratio >= 1.0 {
             return "Amazing! You've crushed your goal!"
@@ -179,9 +81,6 @@ struct ProgressTrackerView: View {
             .sheet(item: $activeSheet) { sheet in
                 sheetContent(for: sheet)
             }
-            .task {
-                await userStore.updateStreakFromCompletions(completionDates)
-            }
         }
     }
 
@@ -191,8 +90,7 @@ struct ProgressTrackerView: View {
         case .streak:
             StreakDetailSheet(
                 currentStreak: userStore.currentUser?.currentStreak ?? 0,
-                bestStreak: userStore.currentUser?.bestStreak ?? 0,
-                completionDates: completionDates
+                bestStreak: userStore.currentUser?.bestStreak ?? 0
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
@@ -200,7 +98,7 @@ struct ProgressTrackerView: View {
         case .tasksCompleted:
             TasksCompletedDetailSheet(
                 tasksCompleted: progress?.tasksCompleted ?? 0,
-                taskGoal: progress?.taskGoal ?? (selectedPeriod == .weekly ? 75 : 300),
+                taskGoal: progress?.taskGoal ?? 1,
                 period: selectedPeriod
             )
             .environment(taskStore)
@@ -211,24 +109,17 @@ struct ProgressTrackerView: View {
             TimeSpentDetailSheet(
                 focusMinutes: progress?.focusTimeMinutes ?? 0,
                 calmMinutes: progress?.calmCentreMinutes ?? 0,
-                period: selectedPeriod,
-                dailyFocusMinutes: dailyFocusMinutes,
-                dailyCalmMinutes: dailyCalmMinutes
+                period: selectedPeriod
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
 
         case .focusPoints:
-            let breakdown = pointsBreakdown
             FocusPointsDetailSheet(
                 totalPoints: userStore.currentUser?.focusPoints ?? 0,
                 currentLevel: userStore.currentUser?.currentLevel ?? 1,
                 periodPoints: progress?.focusPointsEarned ?? 0,
-                period: selectedPeriod,
-                dailyPoints: dailyPoints,
-                focusSessionPoints: breakdown.focus,
-                taskCompletionPoints: breakdown.task,
-                calmCentrePoints: breakdown.calm
+                period: selectedPeriod
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
@@ -299,7 +190,7 @@ struct ProgressTrackerView: View {
             // Custom Circular Progress Ring
             CircularProgressRing(
                 completed: progress?.tasksCompleted ?? 0,
-                goal: progress?.taskGoal ?? (selectedPeriod == .weekly ? 75 : 300)
+                goal: progress?.taskGoal ?? 1
             )
             .frame(width: 100, height: 100)
             .padding(.vertical, 4)

@@ -5,25 +5,15 @@ struct AddTaskSheet: View {
     @Environment(UserStore.self) private var userStore
     @Environment(\.dismiss) private var dismiss
 
-    var initialDate: Date?
-
     @State private var title = ""
-    @State private var isDateEnabled = true
+    @State private var isDateEnabled = false
     @State private var selectedDate = Date()
     @State private var isEndDateEnabled = false
     @State private var endDate = Date()
     @State private var isTimeEnabled = false
     @State private var selectedTime = Date()
     @State private var repeatType: UserTask.RepeatType = .never
-    @State private var difficulty: UserTask.Difficulty = .none
     @State private var estimatedDuration = 25
-
-    init(initialDate: Date? = nil) {
-        self.initialDate = initialDate
-        let date = initialDate ?? Date()
-        _selectedDate = State(initialValue: date)
-        _isDateEnabled = State(initialValue: true)
-    }
 
     var body: some View {
         NavigationStack {
@@ -88,20 +78,7 @@ struct AddTaskSheet: View {
                             Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(AppTheme.warmTextSecondary)
                         }
                     }
-                    
-                    Menu {
-                        ForEach(UserTask.Difficulty.allCases, id: \.self) { diff in
-                            Button(diff.displayName) { difficulty = diff }
-                        }
-                    } label: {
-                        HStack {
-                            Label("Difficulty", systemImage: "flame").foregroundStyle(AppTheme.warmTextPrimary)
-                            Spacer()
-                            Text(difficulty.displayName).foregroundStyle(AppTheme.warmTextPrimary)
-                            Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(AppTheme.warmTextSecondary)
-                        }
-                    }
-                } header: { Text("Repeat & Priority").foregroundStyle(AppTheme.warmTextPrimary).textCase(nil) }
+                } header: { Text("Repeat").foregroundStyle(AppTheme.warmTextPrimary).textCase(nil) }
                 .listRowBackground(AppTheme.cardBg)
 
                 Section {
@@ -166,31 +143,39 @@ struct AddTaskSheet: View {
     }
 
     private func saveTask() {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty else { return }
+        guard !title.isEmpty else { return }
         
-        let userId = userStore.currentUser?.id ?? DummyData.currentUser.id
+        // Guard: must have an authenticated user
+        guard let userId = userStore.currentUser?.id else {
+            taskStore.errorMessage = "Cannot save task: no authenticated user"
+            return
+        }
         
         let task = UserTask(
             userId: userId,
             categoryId: nil,
-            title: trimmedTitle,
-            scheduledDate: isDateEnabled ? selectedDate : (initialDate ?? Date()),
+            title: title,
+            scheduledDate: isDateEnabled ? selectedDate : Date(),
             endDate: isEndDateEnabled ? endDate : nil,
             scheduledTime: isTimeEnabled ? selectedTime : nil,
             repeatType: repeatType,
             priority: .none,
-            difficulty: difficulty,
             isCompleted: false,
             estimatedDuration: estimatedDuration,
             createdAt: Date()
         )
         
         Task {
+            // Clear previous errors
             taskStore.errorMessage = nil
+            
             await taskStore.addTask(task)
+            
+            // Only dismiss if there's no error
             await MainActor.run {
-                dismiss()
+                if taskStore.errorMessage == nil {
+                    dismiss()
+                }
             }
         }
     }
@@ -221,17 +206,6 @@ extension UserTask.Priority {
         case .low: return "Low"
         case .medium: return "Medium"
         case .high: return "High"
-        }
-    }
-}
-
-extension UserTask.Difficulty {
-    var displayName: String {
-        switch self {
-        case .none: return "None"
-        case .easy: return "Easy"
-        case .medium: return "Medium"
-        case .hard: return "Hard"
         }
     }
 }

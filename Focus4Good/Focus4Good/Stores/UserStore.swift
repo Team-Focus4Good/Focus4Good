@@ -28,32 +28,10 @@ class UserStore {
     private var client: SupabaseClient { SupabaseManager.shared.client }
     
     init() {
-        Task {
-            await self.checkExistingSession()
-        }
-    }
-    
-    // MARK: - Session Check
-    func checkExistingSession() async {
-        isLoading = true
-        do {
-            let session = try await client.auth.session
-            let userId = session.user.id
-            await fetchCurrentUser(userId: userId)
-            if currentUser != nil {
-                isAuthenticated = true
-                await loadUserData(userId: userId)
-            } else {
-                isAuthenticated = false
-                currentUser = nil
-            }
-        } catch {
-            print("No active auth session: \(error.localizedDescription)")
-            isAuthenticated = false
-            currentUser = nil
-        }
-        isSessionReady = true
-        isLoading = false
+        // Auth is bypassed — set up a mock user immediately
+        self.currentUser = DummyData.currentUser
+        self.isAuthenticated = true
+        self.isSessionReady = true
     }
     
     // MARK: - Auth
@@ -108,22 +86,17 @@ class UserStore {
             isMfaRequired = false
             await loadUserData(userId: userId)
             
+            // TEMPORARILY DISABLED 2FA
+            // self.isMfaRequired = true
+            // self.isLoading = false
+            // 
+            // // Call Edge Function to send OTP
+            // _ = try await client.functions.invoke(
+            //     "send-otp",
+            //     options: .init(body: ["email": email])
+            // )
         } catch {
-            print("⚠️ Sign-in error: \(error)")
-            let msg = error.localizedDescription.lowercased()
-            if msg.contains("invalid login") || msg.contains("invalid credentials") || msg.contains("wrong password") || msg.contains("email not found") {
-                errorMessage = "Invalid email or password."
-            } else if msg.contains("email not confirmed") || msg.contains("not confirmed") {
-                errorMessage = "Please verify your email address before signing in. Check your inbox for a confirmation link."
-            } else if msg.contains("rate limit") || msg.contains("too many") {
-                errorMessage = "Too many sign-in attempts. Please wait a few minutes and try again."
-            } else if msg.contains("network") || msg.contains("connection") || msg.contains("offline") || msg.contains("url session") {
-                errorMessage = "Network error. Please check your connection and try again."
-            } else if msg.contains("user not found") {
-                errorMessage = "No account found with this email. Please sign up first."
-            } else {
-                errorMessage = error.localizedDescription
-            }
+            errorMessage = "Invalid email or password"
         }
         isLoading = false
     }
@@ -191,9 +164,6 @@ class UserStore {
     }
     
     func signOut() {
-        let leavingUserId = currentUser?.id
-        // Stop any active audio playback
-        ASMRAudioService.shared.stop()
         // Sign out from Supabase (fire-and-forget is fine — we clear local state immediately)
         Task { try? await client.auth.signOut() }
         // Clear auth state
@@ -203,8 +173,10 @@ class UserStore {
         isLoading = false
         errorMessage = nil
         isMfaRequired = false
-        // Clear ALL in-memory store data
-        TaskStore.shared.clearData(for: leavingUserId)
+        // Clear ALL cached store data
+        TaskStore.shared.tasks = []
+        TaskStore.shared.categories = []
+        TaskStore.shared.taskCompletions = [:]
         ProgressStore.shared.clearData()
         CommunityStore.shared.clearData()
         CalmCentreStore.shared.clearData()
@@ -215,10 +187,6 @@ class UserStore {
     
     // MARK: - Password Reset
     func sendPasswordResetEmail(email: String) async throws {
-        // For OTP-based password reset, we do NOT pass redirectTo.
-        // Passing a custom URL scheme (e.g. focus4good://) causes Supabase's
-        // email service to reject the request with "Error sending recovery email".
-        // redirectTo is only needed for magic-link (non-OTP) mode.
         try await client.auth.resetPasswordForEmail(email)
     }
     
@@ -269,10 +237,10 @@ class UserStore {
         async let breathing: ()   = CalmCentreStore.shared.fetchBreathingSessions(userId: userId)
         async let jpmr: ()        = CalmCentreStore.shared.fetchJpmrSessions(userId: userId)
         async let meditation: ()  = CalmCentreStore.shared.fetchGuidedMeditationSessions(userId: userId)
-        async let asmrFavs: ()    = CalmCentreStore.shared.fetchFavouriteAsmrSounds(userId: userId)
+        async let asmr: ()        = CalmCentreStore.shared.fetchAsmrSounds()
         async let folders: ()     = CalmCentreStore.shared.fetchBrainDumpFolders(userId: userId)
         async let entries: ()     = CalmCentreStore.shared.fetchBrainDumpEntries(userId: userId)
-        _ = await (progress, communities, categories, ngos, events, regs, breathing, jpmr, meditation, asmrFavs, folders, entries)
+        _ = await (progress, communities, categories, ngos, events, regs, breathing, jpmr, meditation, asmr, folders, entries)
         
         // Ensure default community and posts exist
         await CommunityStore.shared.seedSondharaCommunityIfNeeded(userId: userId)
@@ -291,25 +259,7 @@ class UserStore {
                 .value
             currentUser = user
         } catch {
-            print("Profile fetch error, using fallback for \(userId): \(error)")
-            let sessionUser = try? await client.auth.session.user
-            let email = sessionUser?.email ?? ""
-            let name = (sessionUser?.userMetadata["full_name"] as? String) ?? email.components(separatedBy: "@").first ?? "User"
-            let newUser = User(
-                id: userId,
-                fullName: name.capitalized,
-                email: email,
-                profileImageUrl: nil,
-                authProvider: "email",
-                focusPoints: 0,
-                currentLevel: 1,
-                bestStreak: 0,
-                currentStreak: 0
-            )
-            currentUser = newUser
-            Task {
-                try? await client.from("profiles").insert(newUser).execute()
-            }
+            errorMessage = "Failed to load profile: \(error.localizedDescription)"
         }
         isLoading = false
     }
@@ -336,20 +286,17 @@ class UserStore {
     
     func updateFocusPoints(by amount: Int) async {
         guard var user = currentUser else { return }
-        let newPoints = max(0, user.focusPoints + amount)
-        user.focusPoints = newPoints
-        currentUser = user
-        UserDefaults.standard.set(newPoints, forKey: "user_focus_points_\(user.id.uuidString)")
-        print("⭐️ Focus points updated: \(newPoints) (delta: \(amount))")
-        
+        let newPoints = user.focusPoints + amount
         do {
             try await client
                 .from("profiles")
                 .update(["focus_points": newPoints])
                 .eq("id", value: user.id.uuidString)
                 .execute()
+            user.focusPoints = newPoints
+            currentUser = user
         } catch {
-            print("⚠️ Supabase sync updateFocusPoints: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
         }
     }
     
@@ -403,83 +350,6 @@ class UserStore {
         return true
     }
     
-    func calculateStreak(from completionDates: Set<String>) -> (current: Int, best: Int) {
-        guard !completionDates.isEmpty else { return (0, 0) }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-
-        var currentStreak = 0
-        var checkDate = today
-        let todayStr = formatter.string(from: today)
-        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
-        let yesterdayStr = formatter.string(from: yesterday)
-
-        if completionDates.contains(todayStr) {
-            checkDate = today
-        } else if completionDates.contains(yesterdayStr) {
-            checkDate = yesterday
-        } else {
-            return (0, calculateBestStreak(from: completionDates, formatter: formatter, cal: cal))
-        }
-
-        while completionDates.contains(formatter.string(from: checkDate)) {
-            currentStreak += 1
-            guard let prev = cal.date(byAdding: .day, value: -1, to: checkDate) else { break }
-            checkDate = prev
-        }
-
-        let bestStreak = max(currentStreak, calculateBestStreak(from: completionDates, formatter: formatter, cal: cal))
-        return (currentStreak, bestStreak)
-    }
-
-    private func calculateBestStreak(from completionDates: Set<String>, formatter: DateFormatter, cal: Calendar) -> Int {
-        let dates = completionDates.compactMap { formatter.date(from: $0) }.map { cal.startOfDay(for: $0) }.sorted()
-        var bestStreak = 0
-        var runningStreak = 0
-        var prevDate: Date? = nil
-
-        for d in dates {
-            if let p = prevDate {
-                let diff = cal.dateComponents([.day], from: p, to: d).day ?? 0
-                if diff == 1 {
-                    runningStreak += 1
-                } else if diff > 1 {
-                    runningStreak = 1
-                }
-            } else {
-                runningStreak = 1
-            }
-            prevDate = d
-            bestStreak = max(bestStreak, runningStreak)
-        }
-        return bestStreak
-    }
-
-    func updateStreakFromCompletions(_ completionDates: Set<String>) async {
-        let (current, best) = calculateStreak(from: completionDates)
-        guard var user = currentUser else { return }
-        if user.currentStreak != current || user.bestStreak != best {
-            user.currentStreak = current
-            user.bestStreak = max(user.bestStreak, best)
-            currentUser = user
-            UserDefaults.standard.set(user.currentStreak, forKey: "user_current_streak_\(user.id.uuidString)")
-            UserDefaults.standard.set(user.bestStreak, forKey: "user_best_streak_\(user.id.uuidString)")
-            
-            do {
-                try await client
-                    .from("profiles")
-                    .update(["current_streak": current, "best_streak": user.bestStreak])
-                    .eq("id", value: user.id.uuidString)
-                    .execute()
-            } catch {
-                print("⚠️ Supabase sync streak error: \(error.localizedDescription)")
-            }
-        }
-    }
-
     func updateStreak(newStreak: Int) async {
         guard var user = currentUser else { return }
         do {

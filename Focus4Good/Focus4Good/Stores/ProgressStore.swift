@@ -22,20 +22,11 @@ class ProgressStore {
     
     static let shared = ProgressStore()
     private var client: SupabaseClient { SupabaseManager.shared.client }
-    
-    // Cache key is user-scoped to prevent data leaking between accounts
-    private func localDataKey(for userId: UUID) -> String { "saved_user_progress_\(userId.uuidString)" }
-    
-    init() {
-        // Do NOT load from local on init — loaded after we know the current user
-    }
+    init() {}
     
     // MARK: - Fetch from Supabase
     func fetchProgress(userId: UUID) async {
         isLoading = true
-        // Clear stale data from previous user before loading
-        progressRecords = []
-        loadFromLocal(for: userId)
         do {
             let fetched: [UserProgress] = try await client
                 .from("user_progress")
@@ -44,10 +35,8 @@ class ProgressStore {
                 .execute()
                 .value
             progressRecords = fetched
-            saveToLocal(for: userId)
         } catch {
             errorMessage = error.localizedDescription
-            print("Fallback: Using locally cached progress")
         }
         isLoading = false
     }
@@ -101,9 +90,6 @@ class ProgressStore {
                     taskGoal: defaultTaskGoal(for: periodType)
                 )
                 mutation(&newRecord)
-                // Instantly append so local state updates even if network fails
-                progressRecords.append(newRecord)
-                
                 do {
                     let inserted: UserProgress = try await client
                         .from("user_progress")
@@ -112,10 +98,7 @@ class ProgressStore {
                         .single()
                         .execute()
                         .value
-                    
-                    if let newIndex = progressRecords.firstIndex(where: { $0.id == newRecord.id }) {
-                        progressRecords[newIndex] = inserted
-                    }
+                    progressRecords.append(inserted)
                 } catch {
                     errorMessage = error.localizedDescription
                 }
@@ -144,27 +127,5 @@ class ProgressStore {
     // MARK: - Clear (called on sign-out)
     func clearData() {
         progressRecords = []
-        // Do NOT remove UserDefaults — user-scoped keys mean data is isolated per user.
-        // Data will be available again when the same user logs back in.
-    }
-    
-    // MARK: - Local Persistence
-    private func saveToLocal(for userId: UUID) {
-        do {
-            let data = try JSONEncoder().encode(progressRecords)
-            UserDefaults.standard.set(data, forKey: localDataKey(for: userId))
-        } catch {
-            print("Failed to save progress to local storage: \(error)")
-        }
-    }
-
-    private func loadFromLocal(for userId: UUID) {
-        guard let data = UserDefaults.standard.data(forKey: localDataKey(for: userId)) else { return }
-        do {
-            let records = try JSONDecoder().decode([UserProgress].self, from: data)
-            self.progressRecords = records
-        } catch {
-            print("Failed to load progress from local storage: \(error)")
-        }
     }
 }
